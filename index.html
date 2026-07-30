@@ -414,9 +414,18 @@ function getSavedConfig(){
   return null;
 }
 function parseFirebaseConfigText(text){
-  const match = text.match(/\{[\s\S]*\}/);
-  if(!match) throw new Error('Configurazione non valida: non trovo un oggetto {}.');
-  return new Function('return ' + match[0])();
+  const anchorIdx = text.indexOf('firebaseConfig');
+  const searchFrom = anchorIdx !== -1 ? text.slice(anchorIdx) : text;
+  const start = searchFrom.indexOf('{');
+  if(start === -1) throw new Error('Non trovo un oggetto { } nella configurazione.');
+  let depth = 0, end = -1;
+  for(let i = start; i < searchFrom.length; i++){
+    if(searchFrom[i] === '{') depth++;
+    else if(searchFrom[i] === '}'){ depth--; if(depth === 0){ end = i; break; } }
+  }
+  if(end === -1) throw new Error('La configurazione sembra incompleta (parentesi non chiuse).');
+  const objText = searchFrom.slice(start, end + 1);
+  return new Function('return ' + objText)();
 }
 function initFirebase(config, code){
   if(!firebase.apps.length) firebase.initializeApp(config);
