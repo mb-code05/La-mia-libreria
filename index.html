@@ -475,6 +475,13 @@ function openSettingsScreen(){
     <h3>Impostazioni</h3>
     <div class="modal-sub">Codice libreria attuale: <b>${escapeHtml(saved?.code||'—')}</b></div>
     <p class="setup-p">Per collegare un altro dispositivo alla stessa libreria, apri questa app lì e inserisci la stessa identica configurazione e lo stesso codice.</p>
+    <div class="field"><label>Backup</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn-mark" id="btnExportSettings" type="button">Scarica backup ora</button>
+        <label class="btn-mark" style="display:inline-block;cursor:pointer;">Ripristina da backup<input type="file" id="btnImportSettings" accept="application/json" style="display:none;"></label>
+      </div>
+      <span class="note-pill" style="margin-top:8px;display:block;">Ripristinare sovrascrive tutta la libreria attuale su questo codice — usalo solo se sei sicura.</span>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="btnResetConfig">Scollega questo dispositivo</button>
       <div style="flex:1"></div>
@@ -482,6 +489,16 @@ function openSettingsScreen(){
     </div>
   `;
   document.getElementById('btnCloseSettings').addEventListener('click', closeModal);
+  document.getElementById('btnExportSettings').addEventListener('click', exportBackup);
+  document.getElementById('btnImportSettings').addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    if(!confirm('Questo sovrascriverà tutta la libreria attuale con il contenuto del file di backup. Continuare?')) return;
+    try{
+      await importBackupFile(file);
+      closeModal(); render();
+    }catch(err){ alert('Errore nel ripristino: ' + err.message); }
+  });
   document.getElementById('btnResetConfig').addEventListener('click', ()=>{
     if(confirm('Sicuro? Dovrai reinserire la configurazione per riconnetterti.')){
       localStorage.removeItem('lib-fb-config'); localStorage.removeItem('lib-code');
@@ -489,6 +506,25 @@ function openSettingsScreen(){
     }
   });
   document.getElementById('modalOverlay').classList.add('open');
+}
+
+function exportBackup(){
+  const data = JSON.stringify({ books, exportedAt: new Date().toISOString() }, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `the-quiet-corner-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function importBackupFile(file){
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const incoming = Array.isArray(parsed) ? parsed : parsed.books;
+  if(!Array.isArray(incoming)) throw new Error('File non valido: non contiene una lista di libri.');
+  books = incoming;
+  await saveData();
 }
 
 /* ================= STATE / STORAGE ================= */
@@ -502,12 +538,30 @@ let editingId = null;
 const STORAGE_KEY = 'library-books-v2';
 
 async function loadData(){
+  let snap;
   try{
-    const snap = await docRef.get();
-    if(snap.exists && snap.data().books){ books = snap.data().books; return; }
-  }catch(e){ console.error('Errore lettura', e); }
+    snap = await docRef.get();
+  }catch(e){
+    console.error('Errore lettura', e);
+    renderLoadError(e.message);
+    throw e; // stop boot — never fall through to reseeding on a read failure
+  }
+  if(snap.exists && snap.data().books){ books = snap.data().books; return; }
+  // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
   books = seedBooks();
   await saveData();
+}
+function renderLoadError(msg){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="eyebrow">Errore</div>
+    <h1 class="title">Non riesco a <em>caricare</em> la libreria</h1>
+    <div class="setup-box">
+      <p class="setup-p">Non sono riuscito a leggere i dati da Firestore, quindi per sicurezza mi sono fermato qui invece di rischiare di sovrascrivere qualcosa. Controlla la connessione e ricarica la pagina.</p>
+      <p class="setup-error" style="display:block;">${escapeHtml(msg)}</p>
+      <button class="btn btn-primary" onclick="location.reload()" style="width:100%;">Ricarica</button>
+    </div>
+  `;
 }
 let pendingWrites = 0;
 let saveStatusFadeTimer = null;
@@ -595,6 +649,7 @@ function render(){
       <h1 class="title">The Quiet <em>Corner</em></h1>
       <div style="display:flex; align-items:center; gap:12px;">
         <span id="saveStatus" class="save-status"></span>
+        <button id="btnExport" title="Scarica una copia di sicurezza" style="background:none;border:none;color:var(--lavender-dim);cursor:pointer;font-size:19px;padding:6px;">⬇</button>
         <button id="btnSettings" title="Impostazioni" style="background:none;border:none;color:var(--lavender-dim);cursor:pointer;font-size:19px;padding:6px;">⚙</button>
       </div>
     </div>
@@ -629,6 +684,7 @@ function render(){
   si.addEventListener('input', e=>{ searchTerm = e.target.value; render(); const el=document.getElementById('searchInput'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); });
   document.querySelectorAll('.tab-btn').forEach(btn=> btn.addEventListener('click', ()=>{ activeTab=btn.dataset.tab; render(); }));
   document.getElementById('btnSettings').addEventListener('click', openSettingsScreen);
+  document.getElementById('btnExport').addEventListener('click', exportBackup);
 
   if(activeTab==='panoramica') renderPanoramica();
   if(activeTab==='libreria') renderLibreria();
@@ -1033,7 +1089,8 @@ document.getElementById('fabAdd').addEventListener('click', openAddModal);
 
 /* ================= INIT ================= */
 async function boot(){
-  await loadData();
+  try{ await loadData(); }
+  catch(e){ return; } // error screen already shown by loadData
   render();
   runCoverQueue();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
