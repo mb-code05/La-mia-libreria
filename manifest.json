@@ -1,6 +1,6 @@
 {
-  "name": "La Libreria",
-  "short_name": "Libreria",
+  "name": "The Quiet Corner",
+  "short_name": "Quiet Corner",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#17101f",
