@@ -190,6 +190,11 @@ section.block{ margin-bottom: 34px; }
 .fab{ position: fixed; bottom: 26px; right: 26px; background: var(--rose); color: var(--parchment); border:none; width:52px; height:52px; border-radius:50%; font-size:26px; cursor:pointer; box-shadow: var(--shadow); z-index: 40; display:flex; align-items:center; justify-content:center; transition: transform .15s; }
 .fab:hover{ transform: scale(1.06); }
 
+.save-status{ font-size:11px; font-weight:700; letter-spacing:.02em; padding:4px 10px; border-radius:999px; opacity:0; transition:opacity .2s; }
+.save-status.saving{ opacity:1; background: var(--gold-soft); color: var(--gold); }
+.save-status.saved{ opacity:1; background: var(--emerald-soft); color: var(--emerald); }
+.save-status.error{ opacity:1; background: var(--rose-soft); color: var(--rose); }
+
 .setup-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 22px; max-width: 480px; }
 .setup-p{ font-size:13px; color: var(--lavender); line-height:1.5; margin: 0 0 16px; }
 .setup-p code{ background: rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; font-size:12px; }
@@ -504,10 +509,39 @@ async function loadData(){
   books = seedBooks();
   await saveData();
 }
-async function saveData(){
-  try{ await docRef.set({ books, updatedAt: Date.now() }); }
-  catch(e){ console.error('Errore salvataggio', e); }
+let pendingWrites = 0;
+let saveStatusFadeTimer = null;
+function setSaveStatus(state){
+  const el = document.getElementById('saveStatus');
+  if(!el) return;
+  if(saveStatusFadeTimer){ clearTimeout(saveStatusFadeTimer); saveStatusFadeTimer = null; }
+  if(state==='saving'){ el.textContent = 'Salvataggio…'; el.className='save-status saving'; }
+  else if(state==='saved'){
+    el.textContent = 'Salvato ✓'; el.className='save-status saved';
+    saveStatusFadeTimer = setTimeout(()=>{ el.className='save-status'; }, 2500);
+  }
+  else if(state==='error'){ el.textContent = '⚠ Salvataggio non riuscito — riprova'; el.className='save-status error'; }
 }
+async function saveData(){
+  pendingWrites++;
+  setSaveStatus('saving');
+  try{
+    await docRef.set({ books, updatedAt: Date.now() });
+    setSaveStatus('saved');
+  }catch(e){
+    console.error('Errore salvataggio', e);
+    setSaveStatus('error');
+    alert('Attenzione: il salvataggio non è riuscito. Controlla la connessione e riprova prima di chiudere la pagina — altrimenti rischi di perdere le ultime modifiche.\n\nDettaglio: ' + e.message);
+  } finally {
+    pendingWrites--;
+  }
+}
+window.addEventListener('beforeunload', (e)=>{
+  if(pendingWrites > 0){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 /* ================= HELPERS ================= */
 function sagaKey(b){ return b.author+'|||'+b.saga; }
@@ -559,7 +593,10 @@ function render(){
     <div class="eyebrow">Reading Tracker</div>
     <div style="display:flex; align-items:baseline; justify-content:space-between;">
       <h1 class="title">The Quiet <em>Corner</em></h1>
-      <button id="btnSettings" title="Impostazioni" style="background:none;border:none;color:var(--lavender-dim);cursor:pointer;font-size:19px;padding:6px;">⚙</button>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span id="saveStatus" class="save-status"></span>
+        <button id="btnSettings" title="Impostazioni" style="background:none;border:none;color:var(--lavender-dim);cursor:pointer;font-size:19px;padding:6px;">⚙</button>
+      </div>
     </div>
     <div class="stats-row">
       <div class="stat-pill"><b>${total}</b><span>libri totali</span></div>
@@ -908,11 +945,11 @@ function openDetail(id){
   }));
 
   document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
-  document.getElementById('btnDeleteBook').addEventListener('click', ()=>{
+  document.getElementById('btnDeleteBook').addEventListener('click', async ()=>{
     books = books.filter(x=>x.id!==id);
-    saveData(); closeModal(); render();
+    await saveData(); closeModal(); render();
   });
-  document.getElementById('btnSaveDetail').addEventListener('click', ()=>{
+  document.getElementById('btnSaveDetail').addEventListener('click', async ()=>{
     b.status = curStatus;
     b.genre = curGenre;
     b.coverUrl = curCoverUrl;
@@ -928,7 +965,7 @@ function openDetail(id){
     if(b.upcoming){
       b.releaseDate = document.getElementById('fRelease').value || null;
     }
-    saveData(); closeModal(); render();
+    await saveData(); closeModal(); render();
   });
 
   document.getElementById('modalOverlay').classList.add('open');
@@ -973,7 +1010,7 @@ function openAddModal(){
     nStatus = el.dataset.nstatus; modal.querySelectorAll('[data-nstatus]').forEach(x=>x.classList.remove('active')); el.classList.add('active');
   }));
   document.getElementById('btnCancelAdd').addEventListener('click', closeModal);
-  document.getElementById('btnSaveAdd').addEventListener('click', ()=>{
+  document.getElementById('btnSaveAdd').addEventListener('click', async ()=>{
     const title = document.getElementById('nTitle').value.trim();
     const author = document.getElementById('nAuthor').value.trim();
     const saga = document.getElementById('nSaga').value.trim() || 'Standalone';
@@ -984,9 +1021,11 @@ function openAddModal(){
     const nb = mk(author, saga, title, nStatus, nGenre, date ? {upcoming:true, releaseDate:date} : {});
     nb.order = order;
     books.push(nb);
-    saveData(); closeModal();
+    setSaveStatus('saving');
+    await saveData();
+    closeModal();
     activeTab='libreria'; render();
-    fetchCoverFor(nb).then(()=>{ patchCoverInDom(nb); saveData(); });
+    fetchCoverFor(nb).then(async ()=>{ patchCoverInDom(nb); setSaveStatus('saving'); await saveData(); });
   });
   document.getElementById('modalOverlay').classList.add('open');
 }
