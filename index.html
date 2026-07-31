@@ -103,6 +103,22 @@ section.block{ margin-bottom: 34px; }
 .btn-mark:hover{ background: var(--rose); color: var(--parchment); }
 .empty-note{ font-size:13px; color: var(--lavender-dim); font-style:italic; padding: 6px 2px; }
 
+.queue-list{ display:flex; flex-direction:column; gap:8px; }
+.queue-row{ display:flex; align-items:flex-start; gap:12px; background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 12px 14px; }
+.queue-num{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:17px; color:var(--gold); width:22px; flex:none; text-align:center; padding-top:2px; }
+.queue-dot{ width:8px; height:8px; border-radius:50%; flex:none; margin-top:8px; }
+.queue-info{ flex:1; min-width:0; }
+.queue-info b{ font-family:'Cormorant Garamond',serif; font-size:15.5px; font-weight:600; }
+.queue-info .meta{ font-size:11.5px; color:var(--lavender); margin-top:2px; }
+.queue-release{ font-size:10px; font-weight:800; color:var(--gold); background:var(--gold-soft); padding:2px 7px; border-radius:5px; margin-left:8px; }
+.queue-note-input{ width:100%; background:none; border:none; border-bottom:1px dashed var(--hairline); color:var(--lavender); font-size:12px; font-style:italic; padding:5px 0 3px; margin-top:6px; outline:none; }
+.queue-note-input:focus{ border-bottom-color:var(--gold); color:var(--parchment); }
+.queue-note-input::placeholder{ color: var(--lavender-dim); }
+.queue-actions{ display:flex; flex-direction:column; gap:3px; flex:none; }
+.queue-actions button{ background:none; border:1px solid var(--hairline); color:var(--lavender-dim); border-radius:5px; width:24px; height:22px; cursor:pointer; font-size:10px; }
+.queue-actions button:hover:not(:disabled){ color:var(--parchment); border-color:var(--lavender-dim); }
+.queue-actions button:disabled{ opacity:.25; cursor:default; }
+
 .upcoming-list{ display:flex; flex-direction:column; gap:8px; }
 .up-row{ display:flex; align-items:center; gap:14px; background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 11px 15px; }
 .up-date{ font-family:'Cormorant Garamond',serif; font-weight:700; color: var(--gold); font-size:15px; width: 96px; flex: none; text-align:center; border-right:1px solid var(--hairline); padding-right:14px; }
@@ -242,7 +258,8 @@ function mk(author, saga, title, status, genre, opts={}){
     upcoming: !!opts.upcoming, releaseDate: opts.releaseDate || null,
     seriesPriority: opts.seriesPriority ?? null, seriesNote: opts.seriesNote || null,
     order: 0, rating: 0, review:'', readFormat:'', pace:'', tags:[], dateFinished:null,
-    coverUrl: null, coverChecked: false, customCoverId: null
+    coverUrl: null, coverChecked: false, customCoverId: null,
+    queueOrder: null, queueNote: ''
   };
 }
 function seedBooks(){
@@ -571,6 +588,36 @@ async function migrateDuplicateIds(){
   if(changed) await saveData();
 }
 
+/* ================= READING PLAN (manual ordered queue) ================= */
+function getQueue(){
+  return books.filter(b=>b.queueOrder!=null).sort((a,b)=>a.queueOrder-b.queueOrder);
+}
+function renormalizeQueue(list){
+  list.forEach((b,i)=> b.queueOrder = i+1);
+}
+async function addToQueue(book){
+  if(book.queueOrder!=null) return;
+  const q = getQueue();
+  book.queueOrder = q.length + 1;
+  await saveData();
+}
+async function removeFromQueue(book){
+  book.queueOrder = null;
+  book.queueNote = '';
+  const q = getQueue();
+  renormalizeQueue(q);
+  await saveData();
+}
+async function moveInQueue(book, dir){
+  const q = getQueue();
+  const idx = q.findIndex(b=>b.id===book.id);
+  const swapIdx = idx + dir;
+  if(idx===-1 || swapIdx<0 || swapIdx>=q.length) return;
+  [q[idx], q[swapIdx]] = [q[swapIdx], q[idx]];
+  renormalizeQueue(q);
+  await saveData();
+}
+
 /* ================= STATE / STORAGE ================= */
 let books = [];
 let activeTab = 'panoramica';
@@ -783,8 +830,36 @@ function renderLetture(){
   const {continues, starts} = buildRecommendations();
   const upcoming = buildUpcoming();
   const noDate = books.filter(b=>b.upcoming && !b.releaseDate);
+  const queue = getQueue();
 
-  let html = `<section class="block"><div class="block-head"><h2>Continua le saghe iniziate</h2></div><div class="rec-grid">`;
+  let html = `<section class="block"><div class="block-head"><h2>Il tuo piano di lettura</h2><span class="sub">l'ordine lo decidi tu</span></div>`;
+  if(queue.length===0){
+    html += `<div class="empty-note">Non hai ancora messo nessun libro nel piano. Apri un libro qualsiasi e usa "Aggiungi al piano di lettura" per iniziare a costruire il tuo ordine.</div>`;
+  } else {
+    html += `<div class="queue-list">`;
+    queue.forEach((b,i)=>{
+      const gs = genreStyle(b.genre);
+      const releaseBadge = b.upcoming ? `<span class="queue-release">${b.releaseDate?fmtDate(b.releaseDate):'in arrivo'}</span>` : '';
+      html += `<div class="queue-row">
+        <div class="queue-num">${i+1}</div>
+        <div class="queue-dot" style="background:${gs.dot}"></div>
+        <div class="queue-info" data-open="${b.id}" style="cursor:pointer;">
+          <b>${escapeHtml(b.title)}</b>${releaseBadge}
+          <div class="meta">${escapeHtml(b.author)} · ${escapeHtml(b.saga)} · ${b.status==='read'?'letto':b.status==='reading'?'in lettura':'da leggere'}</div>
+          <input type="text" class="queue-note-input" data-note="${b.id}" placeholder="Aggiungi una nota (es. rileggi prima di ottobre)…" value="${escapeHtml(b.queueNote||'')}">
+        </div>
+        <div class="queue-actions">
+          <button data-qmove="${b.id}:-1" title="Sposta su" ${i===0?'disabled':''}>▲</button>
+          <button data-qmove="${b.id}:1" title="Sposta gi\u00f9" ${i===queue.length-1?'disabled':''}>▼</button>
+          <button data-qremove="${b.id}" title="Togli dal piano">✕</button>
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  html += `</section>`;
+
+  html += `<section class="block"><div class="block-head"><h2>Continua le saghe iniziate</h2></div><div class="rec-grid">`;
   if(continues.length===0) html += `<div class="empty-note">Nessuna saga in corso al momento.</div>`;
   continues.forEach(c=>{
     html += `<div class="rec-card"><span class="tag continue">${c.readCount}/${c.total} letti</span><h3>${escapeHtml(c.book.title)}</h3><div class="meta">${escapeHtml(c.author)} · <i>${escapeHtml(c.saga)}</i></div><button class="btn-mark" data-open="${c.book.id}">Apri libro</button></div>`;
@@ -818,6 +893,22 @@ function renderLetture(){
 
   panel.innerHTML = html;
   wireCommon(panel);
+  panel.querySelectorAll('[data-qmove]').forEach(el=> el.addEventListener('click', async ()=>{
+    const [id, dir] = el.dataset.qmove.split(':');
+    const b = books.find(x=>x.id===id);
+    if(b){ await moveInQueue(b, parseInt(dir,10)); renderLetture(); }
+  }));
+  panel.querySelectorAll('[data-qremove]').forEach(el=> el.addEventListener('click', async ()=>{
+    const b = books.find(x=>x.id===el.dataset.qremove);
+    if(b){ await removeFromQueue(b); renderLetture(); }
+  }));
+  panel.querySelectorAll('[data-note]').forEach(el=>{
+    el.addEventListener('click', e=> e.stopPropagation());
+    el.addEventListener('change', async ()=>{
+      const b = books.find(x=>x.id===el.dataset.note);
+      if(b){ b.queueNote = el.value.trim(); await saveData(); }
+    });
+  });
 }
 
 /* ================= RENDER: LIBRERIA (genre grid) ================= */
@@ -956,6 +1047,16 @@ function openDetail(id){
       </div>
     </div>
 
+    <div class="field"><label>Piano di lettura</label>
+      <div class="cover-manual-row">
+        <div class="cover-manual-actions" style="align-items:center;">
+          ${b.queueOrder!=null
+            ? `<span class="book-badge" style="background:var(--gold-soft);color:var(--gold);">posizione #${b.queueOrder}</span><button class="btn-mark" id="btnQueueToggle" type="button" style="background:var(--rose-soft);color:var(--rose);">Togli dal piano</button>`
+            : `<button class="btn-mark" id="btnQueueToggle" type="button">Aggiungi al piano di lettura</button>`}
+        </div>
+      </div>
+    </div>
+
     <div class="field"><label>Stato</label>
       <div class="status-seg">
         <button data-set-status="toread" class="${b.status==='toread'?'active':''}">Da leggere</button>
@@ -1079,6 +1180,12 @@ function openDetail(id){
     else { curTags.push(t); el.classList.add('on'); }
   }));
 
+  const queueBtn = document.getElementById('btnQueueToggle');
+  if(queueBtn) queueBtn.addEventListener('click', async ()=>{
+    if(b.queueOrder!=null) await removeFromQueue(b); else await addToQueue(b);
+    openDetail(id); // refresh modal to reflect new state
+  });
+
   document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
   document.getElementById('btnDeleteBook').addEventListener('click', async ()=>{
     if(b.customCoverId) await deleteCustomCover(b.id);
@@ -1118,7 +1225,7 @@ function openDetail(id){
 
   document.getElementById('modalOverlay').classList.add('open');
 }
-function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); editingId=null; }
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); editingId=null; render(); }
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
 
 /* ================= ADD NEW BOOK ================= */
