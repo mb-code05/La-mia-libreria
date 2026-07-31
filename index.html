@@ -242,7 +242,7 @@ function mk(author, saga, title, status, genre, opts={}){
     upcoming: !!opts.upcoming, releaseDate: opts.releaseDate || null,
     seriesPriority: opts.seriesPriority ?? null, seriesNote: opts.seriesNote || null,
     order: 0, rating: 0, review:'', readFormat:'', pace:'', tags:[], dateFinished:null,
-    coverUrl: null, coverChecked: false
+    coverUrl: null, coverChecked: false, customCoverId: null
   };
 }
 function seedBooks(){
@@ -527,6 +527,37 @@ async function importBackupFile(file){
   await saveData();
 }
 
+/* ================= CUSTOM COVER STORAGE (kept out of the main document) ================= */
+const customCoverCache = {};
+async function saveCustomCover(bookId, dataUrl){
+  await docRef.collection('covers').doc(bookId).set({ data: dataUrl });
+  customCoverCache[bookId] = dataUrl;
+}
+async function deleteCustomCover(bookId){
+  try{ await docRef.collection('covers').doc(bookId).delete(); }catch(e){}
+  delete customCoverCache[bookId];
+}
+async function fetchCustomCover(bookId){
+  if(customCoverCache[bookId]) return customCoverCache[bookId];
+  try{
+    const snap = await docRef.collection('covers').doc(bookId).get();
+    if(snap.exists){ customCoverCache[bookId] = snap.data().data; return customCoverCache[bookId]; }
+  }catch(e){ console.error('Errore lettura copertina personalizzata', e); }
+  return null;
+}
+async function migrateInlineCovers(){
+  const toMigrate = books.filter(b => b.coverUrl && b.coverUrl.startsWith('data:'));
+  if(toMigrate.length === 0) return;
+  for(const b of toMigrate){
+    try{
+      await saveCustomCover(b.id, b.coverUrl);
+      b.customCoverId = b.id;
+      b.coverUrl = null;
+    }catch(e){ console.error('Migrazione copertina fallita per', b.title, e); }
+  }
+  await saveData();
+}
+
 /* ================= STATE / STORAGE ================= */
 let books = [];
 let activeTab = 'panoramica';
@@ -784,15 +815,41 @@ function coverCardHtml(b){
   const ribbon = b.status==='reading' ? `<div class="cover-ribbon"></div>` : '';
   const stars = b.status==='read' && b.rating ? `<div class="cover-stars">${starString(b.rating)}</div>` : '';
   const datePill = b.upcoming ? `<div class="cover-date">${b.releaseDate? fmtDate(b.releaseDate):'in arrivo'}</div>` : '';
-  const hasCover = !!b.coverUrl;
-  const loadingCls = (!b.coverChecked) ? ' cover-loading' : '';
-  const img = hasCover ? `<img class="cover-img" loading="lazy" src="${b.coverUrl}">` : '';
+
+  let img = '', hasCover = false, loadingCls = '';
+  if(b.coverUrl){
+    hasCover = true;
+    img = `<img class="cover-img" loading="lazy" src="${b.coverUrl}">`;
+  } else if(b.customCoverId){
+    const cached = customCoverCache[b.customCoverId];
+    if(cached){ hasCover = true; img = `<img class="cover-img" loading="lazy" src="${cached}">`; }
+    else{
+      loadingCls = ' cover-loading';
+      fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchCustomCoverInDom(b.id, data); });
+    }
+  } else if(!b.coverChecked){
+    loadingCls = ' cover-loading';
+  }
+
   return `<div class="cover-card${hasCover?' has-cover':''}${loadingCls}" style="--gc1:${gs.c1};--gc2:${gs.c2};" data-open="${b.id}">
       ${img}${ribbon}${stars}${badge}
       <div class="cover-scrim"></div>
       <div class="cover-content"><div class="ct">${escapeHtml(b.title)}</div><div class="ca">${escapeHtml(b.author)}</div></div>
       ${datePill}
     </div>`;
+}
+function patchCustomCoverInDom(bookId, dataUrl){
+  document.querySelectorAll(`.cover-card[data-open="${bookId}"]`).forEach(el=>{
+    el.classList.remove('cover-loading');
+    el.classList.add('has-cover');
+    if(!el.querySelector('.cover-img')){
+      const img = document.createElement('img');
+      img.className = 'cover-img';
+      img.loading = 'lazy';
+      img.src = dataUrl;
+      el.insertBefore(img, el.firstChild);
+    }
+  });
 }
 
 function renderLibreria(){
@@ -868,12 +925,12 @@ function openDetail(id){
 
     <div class="field"><label>Copertina</label>
       <div class="cover-manual-row">
-        <div class="cover-manual-preview" id="coverPreview">${b.coverUrl?`<img src="${b.coverUrl}">`:'<span>nessuna</span>'}</div>
+        <div class="cover-manual-preview" id="coverPreview">${(b.coverUrl||customCoverCache[b.customCoverId])?`<img src="${b.coverUrl||customCoverCache[b.customCoverId]}">`:'<span>nessuna</span>'}</div>
         <div class="cover-manual-actions">
           <input type="text" id="coverUrlInput" placeholder="Incolla il link di un'immagine">
           <button class="btn-mark" id="btnUseCoverUrl" type="button">Usa link</button>
           <label class="btn-mark" style="display:inline-block;cursor:pointer;">Carica da file<input type="file" id="coverFileInput" accept="image/*" style="display:none;"></label>
-          ${b.coverUrl?'<button class="btn-mark" id="btnClearCover" type="button" style="background:var(--rose-soft);color:var(--rose);">Rimuovi</button>':''}
+          ${(b.coverUrl||b.customCoverId)?'<button class="btn-mark" id="btnClearCover" type="button" style="background:var(--rose-soft);color:var(--rose);">Rimuovi</button>':''}
         </div>
       </div>
     </div>
@@ -935,7 +992,8 @@ function openDetail(id){
     </div>
   `;
 
-  let curStatus = b.status, curGenre = b.genre, curRating = b.rating, curTags = [...b.tags], curCoverUrl = b.coverUrl;
+  let curStatus = b.status, curGenre = b.genre, curRating = b.rating, curTags = [...b.tags];
+  let curCoverUrl = b.coverUrl || customCoverCache[b.customCoverId] || null;
 
   function setPreview(url){
     const prev = document.getElementById('coverPreview');
@@ -1002,14 +1060,27 @@ function openDetail(id){
 
   document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
   document.getElementById('btnDeleteBook').addEventListener('click', async ()=>{
+    if(b.customCoverId) await deleteCustomCover(b.id);
     books = books.filter(x=>x.id!==id);
     await saveData(); closeModal(); render();
   });
   document.getElementById('btnSaveDetail').addEventListener('click', async ()=>{
     b.status = curStatus;
     b.genre = curGenre;
-    b.coverUrl = curCoverUrl;
     b.coverChecked = true;
+    if(curCoverUrl && curCoverUrl.startsWith('data:')){
+      await saveCustomCover(b.id, curCoverUrl);
+      b.customCoverId = b.id;
+      b.coverUrl = null;
+    } else if(curCoverUrl){
+      if(b.customCoverId) await deleteCustomCover(b.id);
+      b.coverUrl = curCoverUrl;
+      b.customCoverId = null;
+    } else {
+      if(b.customCoverId) await deleteCustomCover(b.id);
+      b.coverUrl = null;
+      b.customCoverId = null;
+    }
     if(curStatus==='read'){
       b.rating = curRating;
       b.review = document.getElementById('fReview').value.trim();
@@ -1136,6 +1207,7 @@ document.getElementById('fabAdd').addEventListener('click', openAddModal);
 async function boot(){
   try{ await loadData(); }
   catch(e){ return; } // error screen already shown by loadData
+  await migrateInlineCovers();
   render();
   runCoverQueue();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
