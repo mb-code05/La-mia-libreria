@@ -854,6 +854,9 @@ function patchCustomCoverInDom(bookId, dataUrl){
 
 function renderLibreria(){
   const panel = document.getElementById('panel-libreria');
+  const validGenres = allGenres();
+  if(genreFilter !== 'tutti' && !validGenres.includes(genreFilter)) genreFilter = 'tutti';
+  if(!['tutti','letti','lettura','daleggere'].includes(statusFilter)) statusFilter = 'tutti';
   const term = searchTerm.trim().toLowerCase();
   let filtered = books;
   if(term) filtered = filtered.filter(b => b.title.toLowerCase().includes(term) || b.author.toLowerCase().includes(term) || b.saga.toLowerCase().includes(term));
@@ -878,7 +881,12 @@ function renderLibreria(){
   </div>`;
 
   if(filtered.length===0){
-    html += `<div class="empty-note">Nessun libro trovato con questi filtri.</div>`;
+    const reasons = [];
+    if(term) reasons.push(`la ricerca "${escapeHtml(searchTerm)}"`);
+    if(statusFilter!=='tutti') reasons.push(`lo stato "${statusFilter}"`);
+    if(genreFilter!=='tutti') reasons.push(`il genere "${escapeHtml(genreFilter)}"`);
+    const reasonText = reasons.length ? ' (' + reasons.join(', ') + ')' : '';
+    html += `<div class="empty-note">Nessun libro trovato con questi filtri${reasonText}.</div>`;
     panel.innerHTML = html;
     wireCommon(panel);
     return;
