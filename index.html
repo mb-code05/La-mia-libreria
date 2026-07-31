@@ -257,7 +257,7 @@ function mk(author, saga, title, status, genre, opts={}){
     id: nid(), author, saga, title, status, genre,
     upcoming: !!opts.upcoming, releaseDate: opts.releaseDate || null,
     seriesPriority: opts.seriesPriority ?? null, seriesNote: opts.seriesNote || null,
-    order: 0, rating: 0, review:'', readFormat:'', pace:'', tags:[], dateFinished:null,
+    order: 0, rating: 0, review:'', reviewPlot:'', reviewCharacters:'', reviewQuotes:'', readFormat:'', pace:'', tags:[], dateFinished:null,
     coverUrl: null, coverChecked: false, customCoverId: null,
     queueOrder: null, queueNote: ''
   };
@@ -616,6 +616,17 @@ async function moveInQueue(book, dir){
   [q[idx], q[swapIdx]] = [q[swapIdx], q[idx]];
   renormalizeQueue(q);
   await saveData();
+}
+
+async function migrateReviewFields(){
+  let changed = false;
+  books.forEach(b=>{
+    if(b.review && !b.reviewPlot && !b.reviewCharacters && !b.reviewQuotes){
+      b.reviewPlot = b.review;
+      changed = true;
+    }
+  });
+  if(changed) await saveData();
 }
 
 /* ================= STATE / STORAGE ================= */
@@ -1077,7 +1088,9 @@ function openDetail(id){
           ${[1,2,3,4,5].map(n=>`<span data-star="${n}" class="${n<=b.rating?'on':''}">★</span>`).join('')}
         </div>
       </div>
-      <div class="field"><label>Recensione</label><textarea id="fReview" placeholder="Cosa ne pensi? Trama, personaggi, sensazioni…">${escapeHtml(b.review)}</textarea></div>
+      <div class="field"><label>Trama e sviluppo della storia</label><textarea id="fReviewPlot" placeholder="Come si sviluppa la trama, ritmo, colpi di scena…">${escapeHtml(b.reviewPlot)}</textarea></div>
+      <div class="field"><label>Personaggi preferiti</label><textarea id="fReviewCharacters" placeholder="Chi ti è rimasto nel cuore e perché…" style="min-height:55px;">${escapeHtml(b.reviewCharacters)}</textarea></div>
+      <div class="field"><label>Citazioni preferite</label><textarea id="fReviewQuotes" placeholder="Le frasi che vuoi ricordare…" style="min-height:55px;">${escapeHtml(b.reviewQuotes)}</textarea></div>
       <div class="two-col">
         <div class="field"><label>Formato</label>
           <select id="fFormat">
@@ -1211,7 +1224,9 @@ function openDetail(id){
     }
     if(curStatus==='read'){
       b.rating = curRating;
-      b.review = document.getElementById('fReview').value.trim();
+      b.reviewPlot = document.getElementById('fReviewPlot').value.trim();
+      b.reviewCharacters = document.getElementById('fReviewCharacters').value.trim();
+      b.reviewQuotes = document.getElementById('fReviewQuotes').value.trim();
       b.readFormat = document.getElementById('fFormat').value;
       b.pace = document.getElementById('fPace').value;
       b.dateFinished = document.getElementById('fFinished').value || null;
@@ -1337,6 +1352,7 @@ async function boot(){
   catch(e){ return; } // error screen already shown by loadData
   await migrateDuplicateIds();
   await migrateInlineCovers();
+  await migrateReviewFields();
   render();
   runCoverQueue();
   if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
