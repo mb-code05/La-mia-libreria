@@ -235,7 +235,7 @@ function genreStyle(name){
 
 /* ================= SEED DATA ================= */
 let uid = 1;
-const nid = () => 'b' + (uid++);
+const nid = () => 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
 function mk(author, saga, title, status, genre, opts={}){
   return {
     id: nid(), author, saga, title, status, genre,
@@ -556,6 +556,19 @@ async function migrateInlineCovers(){
     }catch(e){ console.error('Migrazione copertina fallita per', b.title, e); }
   }
   await saveData();
+}
+
+async function migrateDuplicateIds(){
+  const seen = new Set();
+  let changed = false;
+  books.forEach(b=>{
+    if(seen.has(b.id)){
+      b.id = nid(); // reassign a fresh, unique id to the duplicate
+      changed = true;
+    }
+    seen.add(b.id);
+  });
+  if(changed) await saveData();
 }
 
 /* ================= STATE / STORAGE ================= */
@@ -1215,6 +1228,7 @@ document.getElementById('fabAdd').addEventListener('click', openAddModal);
 async function boot(){
   try{ await loadData(); }
   catch(e){ return; } // error screen already shown by loadData
+  await migrateDuplicateIds();
   await migrateInlineCovers();
   render();
   runCoverQueue();
