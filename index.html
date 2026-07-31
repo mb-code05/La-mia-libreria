@@ -1034,11 +1034,11 @@ function openBulkAddModal(){
   const modal = document.getElementById('modalInner');
   modal.innerHTML = `
     <h3>Aggiungi più libri insieme</h3>
-    <div class="modal-sub">Una riga per libro, così: <code>Titolo - Autore - Saga - Genere</code> (Saga e Genere sono opzionali)</div>
+    <div class="modal-sub">Una riga per libro, separando i campi con <code>|</code>: <code>Titolo | Autore | Saga | Genere</code> (Saga e Genere sono opzionali, ma se salti la Saga lascia comunque il simbolo <code>|</code> al suo posto)</div>
     <div class="field">
-      <textarea id="bulkText" style="min-height:200px; font-family:monospace; font-size:12.5px;" placeholder="Mate - Ali Hazelwood - - Romance
-One Dark Window - Rachel Gillig - The Shepherd King - Fantasy
-Fatum - Azura Helianthius"></textarea>
+      <textarea id="bulkText" style="min-height:200px; font-family:monospace; font-size:12.5px;" placeholder="Mate | Ali Hazelwood | | Romance
+One Dark Window | Rachel Gillig | The Shepherd King | Fantasy
+Fatum | Azura Helianthius"></textarea>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="btnBackToSingle" type="button">← Aggiungi un libro solo</button>
@@ -1052,10 +1052,11 @@ Fatum - Azura Helianthius"></textarea>
   document.getElementById('btnSaveBulk').addEventListener('click', async ()=>{
     const lines = document.getElementById('bulkText').value.split('\n').map(l=>l.trim()).filter(Boolean);
     if(lines.length===0) return;
+    const skipped = [];
     lines.forEach(line=>{
-      const parts = line.split(' - ').map(p=>p.trim());
+      const parts = line.split('|').map(p=>p.trim());
       const title = parts[0], author = parts[1];
-      if(!title || !author) return;
+      if(!title || !author){ skipped.push(line); return; }
       const saga = parts[2] || 'Standalone';
       const genre = parts[3] || 'Altro';
       const existingCount = books.filter(b=>b.author===author && b.saga===saga).length;
@@ -1067,8 +1068,8 @@ Fatum - Azura Helianthius"></textarea>
     await saveData();
     closeModal();
     activeTab = 'libreria'; render();
-    // fetch covers for the newly added batch without blocking the UI
     runCoverQueue();
+    if(skipped.length) alert('Attenzione: ' + skipped.length + ' riga/e ignorate perché mancava titolo o autore:\n' + skipped.join('\n'));
   });
   document.getElementById('modalOverlay').classList.add('open');
 }
