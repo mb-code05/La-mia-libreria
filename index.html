@@ -69,7 +69,7 @@ h1.title em{ color: var(--rose); font-style:italic; }
 .searchbar input::placeholder{ color: var(--lavender-dim); }
 
 /* ---- Tabs ---- */
-.tabs{ display:flex; gap:4px; margin-bottom: 24px; border-bottom:1px solid var(--hairline); }
+.tabs{ display:flex; gap:4px; margin-bottom: 24px; border-bottom:1px solid var(--hairline); flex-wrap:wrap; overflow-x:auto; }
 .tab-btn{ background:none; border:none; color: var(--lavender-dim); font-weight:700; font-size: 13.5px; letter-spacing:.03em; padding: 10px 16px 12px; cursor:pointer; position:relative; transition: color .15s; }
 .tab-btn:hover{ color: var(--parchment); }
 .tab-btn.active{ color: var(--parchment); }
@@ -210,6 +210,28 @@ section.block{ margin-bottom: 34px; }
 .save-status.saving{ opacity:1; background: var(--gold-soft); color: var(--gold); }
 .save-status.saved{ opacity:1; background: var(--emerald-soft); color: var(--emerald); }
 .save-status.error{ opacity:1; background: var(--rose-soft); color: var(--rose); }
+
+.goal-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
+.goal-track{ height:10px; background: rgba(255,255,255,0.06); border-radius:6px; overflow:hidden; margin-bottom:9px; }
+.goal-fill{ height:100%; background: linear-gradient(90deg, var(--rose), var(--gold)); border-radius:6px; transition: width .3s; }
+.goal-label{ font-size:12.5px; color:var(--lavender); }
+.goal-label b{ color:var(--gold); font-family:'Cormorant Garamond',serif; font-size:15px; }
+
+.dice-btn{ width:100%; background: var(--bg-card); border:1px solid var(--hairline); color:var(--parchment); font-size:15px; font-weight:700; padding:14px; border-radius: var(--radius); cursor:pointer; transition: transform .15s, background .15s; }
+.dice-btn:hover{ transform: translateY(-2px); background: var(--rose-soft); }
+
+.wrapped-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap:10px; }
+.wrapped-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align:center; }
+.wrapped-num{ font-family:'Cormorant Garamond',serif; font-size:26px; font-weight:700; color:var(--gold); line-height:1.1; }
+.wrapped-label{ font-size:11px; color:var(--lavender); margin-top:5px; }
+
+.quote-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap:12px; }
+.quote-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 18px 16px 14px; transition: transform .18s; position:relative; }
+.quote-card:hover{ transform: translateY(-2px); }
+.quote-mark{ font-family:'Cormorant Garamond',serif; font-size:40px; color: var(--gold); opacity:.4; line-height:0.5; margin-bottom:4px; }
+.quote-text{ font-family:'Cormorant Garamond',serif; font-style:italic; font-size:15px; line-height:1.4; color:var(--parchment); white-space:pre-wrap; }
+.quote-attrib{ font-size:11px; color:var(--lavender-dim); margin-top:12px; display:flex; align-items:center; gap:6px; }
+.quote-dot{ width:6px; height:6px; border-radius:50%; flex:none; }
 
 .setup-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 22px; max-width: 480px; }
 .setup-p{ font-size:13px; color: var(--lavender); line-height:1.5; margin: 0 0 16px; }
@@ -631,6 +653,7 @@ async function migrateReviewFields(){
 
 /* ================= STATE / STORAGE ================= */
 let books = [];
+let yearlyGoal = null;
 let activeTab = 'panoramica';
 let searchTerm = '';
 let statusFilter = 'tutti';
@@ -648,7 +671,11 @@ async function loadData(){
     renderLoadError(e.message);
     throw e; // stop boot — never fall through to reseeding on a read failure
   }
-  if(snap.exists && snap.data().books){ books = snap.data().books; return; }
+  if(snap.exists && snap.data().books){
+    books = snap.data().books;
+    yearlyGoal = snap.data().yearlyGoal ?? null;
+    return;
+  }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
   books = seedBooks();
   await saveData();
@@ -682,7 +709,7 @@ async function saveData(){
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, updatedAt: Date.now() });
     setSaveStatus('saved');
   }catch(e){
     console.error('Errore salvataggio', e);
@@ -776,10 +803,12 @@ function render(){
       <button class="tab-btn ${activeTab==='panoramica'?'active':''}" data-tab="panoramica">Panoramica</button>
       <button class="tab-btn ${activeTab==='libreria'?'active':''}" data-tab="libreria">Libreria</button>
       <button class="tab-btn ${activeTab==='letture'?'active':''}" data-tab="letture">Prossime letture</button>
+      <button class="tab-btn ${activeTab==='extra'?'active':''}" data-tab="extra">Il tuo anno</button>
     </div>
     <div class="tab-panel ${activeTab==='panoramica'?'active':''}" id="panel-panoramica"></div>
     <div class="tab-panel ${activeTab==='libreria'?'active':''}" id="panel-libreria"></div>
     <div class="tab-panel ${activeTab==='letture'?'active':''}" id="panel-letture"></div>
+    <div class="tab-panel ${activeTab==='extra'?'active':''}" id="panel-extra"></div>
   `;
 
   const si = document.getElementById('searchInput');
@@ -791,6 +820,7 @@ function render(){
   if(activeTab==='panoramica') renderPanoramica();
   if(activeTab==='libreria') renderLibreria();
   if(activeTab==='letture') renderLetture();
+  if(activeTab==='extra') renderExtra();
 }
 
 /* ================= RENDER: PANORAMICA ================= */
@@ -799,8 +829,24 @@ function renderPanoramica(){
   const {continues, starts} = buildRecommendations();
   const upcoming = buildUpcoming().slice(0,3);
   const recentlyRead = books.filter(b=>b.status==='read').slice(-4).reverse();
+  const thisYear = new Date().getFullYear();
+  const readThisYear = books.filter(b=>b.status==='read' && b.dateFinished && new Date(b.dateFinished).getFullYear()===thisYear).length;
 
-  let html = `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">consigliato per te</span></div><div class="rec-grid">`;
+  let html = `<section class="block"><div class="block-head"><h2>Il tuo obiettivo ${thisYear}</h2><span class="sub" id="goalEditLink" style="cursor:pointer; text-decoration:underline;">${yearlyGoal? 'modifica':'imposta un obiettivo'}</span></div>`;
+  if(yearlyGoal){
+    const pct = Math.min(100, Math.round(readThisYear/yearlyGoal*100));
+    html += `<div class="goal-box">
+      <div class="goal-track"><div class="goal-fill" style="width:${pct}%;"></div></div>
+      <div class="goal-label"><b>${readThisYear}</b> di ${yearlyGoal} libri — ${pct}%</div>
+    </div>`;
+  } else {
+    html += `<div class="empty-note">Non hai ancora un obiettivo per quest'anno. Clicca "imposta un obiettivo" per iniziare a tracciarlo.</div>`;
+  }
+  html += `</section>`;
+
+  html += `<section class="block"><button class="dice-btn" id="btnDicePick">🎲 Cosa leggo stasera?</button></section>`;
+
+  html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">consigliato per te</span></div><div class="rec-grid">`;
   if(continues.length===0 && starts.length===0) html += `<div class="empty-note">Nessun suggerimento — aggiungi qualche libro dalla libreria.</div>`;
   continues.slice(0,3).forEach(c=>{
     html += `<div class="rec-card"><span class="tag continue">Continua la saga</span><h3>${escapeHtml(c.book.title)}</h3><div class="meta">${escapeHtml(c.author)} · <i>${escapeHtml(c.saga)}</i> — ${c.readCount}/${c.total} letti</div><button class="btn-mark" data-open="${c.book.id}">Apri libro</button></div>`;
@@ -833,6 +879,13 @@ function renderPanoramica(){
 
   panel.innerHTML = html;
   wireCommon(panel);
+  document.getElementById('btnDicePick').addEventListener('click', openDicePick);
+  document.getElementById('goalEditLink').addEventListener('click', async ()=>{
+    const val = prompt('Quanti libri vuoi leggere entro fine ' + thisYear + '?', yearlyGoal || '');
+    if(val===null) return;
+    const n = parseInt(val,10);
+    if(!isNaN(n) && n>0){ yearlyGoal = n; await saveData(); render(); }
+  });
 }
 
 /* ================= RENDER: LETTURE (TBR + releases) ================= */
@@ -1242,6 +1295,127 @@ function openDetail(id){
 }
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); editingId=null; render(); }
 document.getElementById('modalOverlay').addEventListener('click', e=>{ if(e.target.id==='modalOverlay') closeModal(); });
+
+/* ================= RENDER: EXTRA (yearly stats + quote wall) ================= */
+let extraYear = new Date().getFullYear();
+function renderExtra(){
+  const panel = document.getElementById('panel-extra');
+  const readBooks = books.filter(b=>b.status==='read');
+  const availableYears = [...new Set(readBooks.filter(b=>b.dateFinished).map(b=>new Date(b.dateFinished).getFullYear()))].sort((a,b)=>b-a);
+  if(!availableYears.includes(extraYear) && availableYears.length) extraYear = availableYears[0];
+
+  const yearBooks = readBooks.filter(b=>b.dateFinished && new Date(b.dateFinished).getFullYear()===extraYear);
+
+  let html = `<section class="block"><div class="block-head"><h2>Il tuo anno in libri</h2>
+    <select id="yearPicker" style="background:var(--bg-elevated);border:1px solid var(--hairline);color:var(--parchment);border-radius:7px;padding:5px 9px;font-size:12px;">
+      ${availableYears.length ? availableYears.map(y=>`<option value="${y}" ${y===extraYear?'selected':''}>${y}</option>`).join('') : `<option>${extraYear}</option>`}
+    </select>
+  </div>`;
+
+  if(yearBooks.length===0){
+    html += `<div class="empty-note">Nessun libro con data di fine lettura registrata per il ${extraYear}. Apri un libro letto e imposta la "Data fine lettura" per farlo comparire qui.</div></section>`;
+  } else {
+    const genreCounts = {}; yearBooks.forEach(b=> genreCounts[b.genre]=(genreCounts[b.genre]||0)+1);
+    const topGenre = Object.entries(genreCounts).sort((a,b)=>b[1]-a[1])[0];
+    const authorCounts = {}; yearBooks.forEach(b=> authorCounts[b.author]=(authorCounts[b.author]||0)+1);
+    const topAuthor = Object.entries(authorCounts).sort((a,b)=>b[1]-a[1])[0];
+    const rated = yearBooks.filter(b=>b.rating>0);
+    const avgRating = rated.length ? (rated.reduce((s,b)=>s+b.rating,0)/rated.length).toFixed(1) : '—';
+    const monthCounts = {}; yearBooks.forEach(b=>{ const m=new Date(b.dateFinished).getMonth(); monthCounts[m]=(monthCounts[m]||0)+1; });
+    const topMonthIdx = Object.entries(monthCounts).sort((a,b)=>b[1]-a[1])[0];
+    const monthNames = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+    const sagaGroups = groupBySaga(books);
+    let longestFinishedSaga = null, longestLen = 0;
+    sagaGroups.forEach((list,key)=>{
+      const allRead = list.every(b=>b.status==='read');
+      const finishedThisYear = list.some(b=>b.dateFinished && new Date(b.dateFinished).getFullYear()===extraYear);
+      if(allRead && finishedThisYear && list.length>longestLen){ longestLen=list.length; longestFinishedSaga=key.split('|||'); }
+    });
+
+    html += `<div class="wrapped-grid">
+      <div class="wrapped-card"><div class="wrapped-num">${yearBooks.length}</div><div class="wrapped-label">libri finiti</div></div>
+      <div class="wrapped-card"><div class="wrapped-num">${avgRating}</div><div class="wrapped-label">voto medio</div></div>
+      <div class="wrapped-card"><div class="wrapped-num" style="font-size:19px;">${topGenre?escapeHtml(topGenre[0]):'—'}</div><div class="wrapped-label">genere del cuore</div></div>
+      <div class="wrapped-card"><div class="wrapped-num" style="font-size:19px;">${topAuthor?escapeHtml(topAuthor[0]):'—'}</div><div class="wrapped-label">autrice/autore più letto (${topAuthor?topAuthor[1]:0})</div></div>
+      <div class="wrapped-card"><div class="wrapped-num" style="font-size:19px;">${topMonthIdx?monthNames[topMonthIdx[0]]:'—'}</div><div class="wrapped-label">mese più prolifico</div></div>
+      <div class="wrapped-card"><div class="wrapped-num" style="font-size:16px;">${longestFinishedSaga?escapeHtml(longestFinishedSaga[1]):'—'}</div><div class="wrapped-label">saga più lunga finita (${longestLen||0} libri)</div></div>
+    </div></section>`;
+  }
+
+  const quoteBooks = books.filter(b=>b.reviewQuotes && b.reviewQuotes.trim());
+  html += `<section class="block"><div class="block-head"><h2>Bacheca delle citazioni</h2><span class="sub">${quoteBooks.length} libri con citazioni salvate</span></div>`;
+  if(quoteBooks.length===0){
+    html += `<div class="empty-note">Non hai ancora salvato citazioni. Apri un libro letto e scrivine una nella sezione "Citazioni preferite".</div>`;
+  } else {
+    html += `<div class="quote-grid">`;
+    quoteBooks.forEach(b=>{
+      const gs = genreStyle(b.genre);
+      html += `<div class="quote-card" data-open="${b.id}" style="cursor:pointer;">
+        <div class="quote-mark">"</div>
+        <div class="quote-text">${escapeHtml(b.reviewQuotes)}</div>
+        <div class="quote-attrib"><span class="quote-dot" style="background:${gs.dot}"></span>${escapeHtml(b.title)} — ${escapeHtml(b.author)}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  html += `</section>`;
+
+  panel.innerHTML = html;
+  wireCommon(panel);
+  const yp = document.getElementById('yearPicker');
+  if(yp) yp.addEventListener('change', ()=>{ extraYear = parseInt(yp.value,10); renderExtra(); });
+}
+
+/* ================= "COSA LEGGO STASERA?" ================= */
+function pickRandomBook(){
+  let pool = books.filter(b=>b.status==='toread' && !b.upcoming);
+  if(pool.length===0) pool = books.filter(b=>b.status!=='read');
+  if(pool.length===0) return null;
+  // slightly favor books that continue an already-started saga
+  const weighted = pool.map(b=>{
+    const sagaMates = books.filter(x=>x.author===b.author && x.saga===b.saga);
+    const startedBonus = sagaMates.some(x=>x.status==='read') ? 2 : 1;
+    return {b, weight: startedBonus};
+  });
+  const total = weighted.reduce((s,w)=>s+w.weight, 0);
+  let r = Math.random()*total;
+  for(const w of weighted){ r -= w.weight; if(r<=0) return w.b; }
+  return pool[0];
+}
+function openDicePick(){
+  const b = pickRandomBook();
+  const modal = document.getElementById('modalInner');
+  if(!b){
+    modal.innerHTML = `<h3>Cosa leggo stasera?</h3><div class="empty-note">Non ho trovato nessun libro "da leggere" già uscito. Aggiungine qualcuno!</div><div class="modal-actions"><div style="flex:1"></div><button class="btn btn-ghost" id="btnCloseDetail">Chiudi</button></div>`;
+    document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
+    document.getElementById('modalOverlay').classList.add('open');
+    return;
+  }
+  const gs = genreStyle(b.genre);
+  const cover = b.coverUrl || customCoverCache[b.customCoverId];
+  modal.innerHTML = `
+    <h3>🎲 Stasera leggi…</h3>
+    <div style="display:flex; gap:16px; align-items:center; margin:16px 0;">
+      <div style="width:72px;height:108px;flex:none;border-radius:6px;overflow:hidden;background:linear-gradient(155deg,${gs.c1},${gs.c2});display:flex;align-items:center;justify-content:center;">
+        ${cover?`<img src="${cover}" style="width:100%;height:100%;object-fit:cover;">`:''}
+      </div>
+      <div>
+        <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:700;">${escapeHtml(b.title)}</div>
+        <div class="modal-sub" style="margin-bottom:0;">${escapeHtml(b.author)} · <i>${escapeHtml(b.saga)}</i></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="btnDiceReroll" type="button">🎲 Riprova</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" id="btnCloseDetail">Chiudi</button>
+      <button class="btn btn-primary" id="btnDiceOpen" type="button">Apri libro</button>
+    </div>
+  `;
+  document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
+  document.getElementById('btnDiceReroll').addEventListener('click', openDicePick);
+  document.getElementById('btnDiceOpen').addEventListener('click', ()=> openDetail(b.id));
+  document.getElementById('modalOverlay').classList.add('open');
+}
 
 /* ================= ADD NEW BOOK ================= */
 function openBulkAddModal(){
