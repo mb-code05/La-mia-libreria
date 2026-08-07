@@ -242,6 +242,17 @@ section.block{ margin-bottom: 34px; }
   text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
+.checkin-btn{ width:100%; background: var(--bg-card); border:1px solid var(--hairline); color:var(--parchment); font-size:15px; font-weight:700; padding:14px; border-radius: var(--radius); cursor:pointer; transition: transform .15s, background .15s; }
+.checkin-btn:hover{ transform: translateY(-2px); }
+.checkin-btn.done{ background: var(--emerald-soft); color: var(--emerald); border-color: transparent; }
+
+.challenge-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align:center; transition: border-color .2s; }
+.challenge-card.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.challenge-icon{ font-size:26px; margin-bottom:4px; }
+.challenge-title{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:16px; color:var(--parchment); }
+.challenge-sub{ font-size:11.5px; color:var(--lavender); margin-top:3px; }
+.challenge-record{ font-size:10.5px; color:var(--gold); margin-top:6px; font-style:italic; }
+
 .goal-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
 .goal-track{ height:10px; background: rgba(255,255,255,0.06); border-radius:6px; overflow:hidden; margin-bottom:9px; }
 .goal-fill{ height:100%; background: linear-gradient(90deg, var(--rose), var(--gold)); border-radius:6px; transition: width .3s; }
@@ -310,7 +321,7 @@ function mk(author, saga, title, status, genre, opts={}){
     id: nid(), author, saga, title, status, genre,
     upcoming: !!opts.upcoming, releaseDate: opts.releaseDate || null,
     seriesPriority: opts.seriesPriority ?? null, seriesNote: opts.seriesNote || null,
-    order: 0, rating: 0, review:'', reviewPlot:'', reviewCharacters:'', reviewQuotes:'', readFormat:'', pace:'', tags:[], dateFinished:null,
+    order: 0, rating: 0, review:'', reviewPlot:'', reviewCharacters:'', reviewQuotes:'', readFormat:'', pace:'', tags:[], dateStarted:null, dateFinished:null,
     coverUrl: null, coverChecked: false, customCoverId: null,
     queueOrder: null, queueNote: ''
   };
@@ -682,9 +693,59 @@ async function migrateReviewFields(){
   if(changed) await saveData();
 }
 
+/* ================= READING CHALLENGES ================= */
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isCheckedInToday(){ return readingLog.includes(todayISO()); }
+async function checkInToday(){
+  const t = todayISO();
+  if(!readingLog.includes(t)){ readingLog.push(t); readingLog.sort(); await saveData(); }
+}
+async function undoCheckInToday(){
+  const t = todayISO();
+  readingLog = readingLog.filter(d=>d!==t);
+  await saveData();
+}
+function computeStreaks(){
+  const days = new Set(readingLog);
+  // current streak: walk backwards from today while consecutive days are present
+  let current = 0;
+  let cursor = new Date();
+  while(true){
+    const iso = cursor.toISOString().slice(0,10);
+    if(days.has(iso)){ current++; cursor.setDate(cursor.getDate()-1); }
+    else break;
+  }
+  // best streak ever: scan sorted unique days for longest consecutive run
+  const sorted = [...days].sort();
+  let best = 0, run = 0, prev = null;
+  sorted.forEach(iso=>{
+    const d = new Date(iso+'T00:00:00');
+    if(prev){
+      const diffDays = Math.round((d-prev)/86400000);
+      run = (diffDays===1) ? run+1 : 1;
+    } else run = 1;
+    if(run>best) best = run;
+    prev = d;
+  });
+  return { current, best };
+}
+function computeFlashReads(){
+  return books.filter(b=>{
+    if(!b.dateStarted || !b.dateFinished) return false;
+    const hours = (new Date(b.dateFinished) - new Date(b.dateStarted)) / 3600000;
+    return hours >= 0 && hours <= 48;
+  }).sort((a,b)=> new Date(b.dateFinished) - new Date(a.dateFinished));
+}
+function computeTbrProgress(){
+  const q = getQueue();
+  const done = q.filter(b=>b.status==='read').length;
+  return { done, total: q.length };
+}
+
 /* ================= STATE / STORAGE ================= */
 let books = [];
 let yearlyGoal = null;
+let readingLog = []; // array of 'YYYY-MM-DD' strings, one per day the user checked in as "read today"
 let activeTab = 'panoramica';
 let searchTerm = '';
 let statusFilter = 'tutti';
@@ -705,6 +766,7 @@ async function loadData(){
   if(snap.exists && snap.data().books){
     books = snap.data().books;
     yearlyGoal = snap.data().yearlyGoal ?? null;
+    readingLog = snap.data().readingLog ?? [];
     return;
   }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
@@ -740,7 +802,7 @@ async function saveData(){
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, yearlyGoal, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, readingLog, updatedAt: Date.now() });
     setSaveStatus('saved');
   }catch(e){
     console.error('Errore salvataggio', e);
@@ -880,6 +942,13 @@ function renderPanoramica(){
 
   html += `<section class="block"><button class="dice-btn" id="btnDicePick">🎲 Cosa leggo stasera?</button></section>`;
 
+  const streaks = computeStreaks();
+  html += `<section class="block">
+    <button class="checkin-btn ${isCheckedInToday()?'done':''}" id="btnCheckIn">
+      ${isCheckedInToday() ? `✓ Hai letto oggi — striscia di ${streaks.current} giorni 🔥` : '📖 Ho letto oggi'}
+    </button>
+  </section>`;
+
   html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">consigliato per te</span></div><div class="rec-grid">`;
   if(continues.length===0 && starts.length===0) html += `<div class="empty-note">Nessun suggerimento — aggiungi qualche libro dalla libreria.</div>`;
   continues.slice(0,3).forEach(c=>{
@@ -914,6 +983,10 @@ function renderPanoramica(){
   panel.innerHTML = html;
   wireCommon(panel);
   document.getElementById('btnDicePick').addEventListener('click', openDicePick);
+  document.getElementById('btnCheckIn').addEventListener('click', async ()=>{
+    if(isCheckedInToday()) await undoCheckInToday(); else await checkInToday();
+    render();
+  });
   document.getElementById('goalEditLink').addEventListener('click', async ()=>{
     const val = prompt('Quanti libri vuoi leggere entro fine ' + thisYear + '?', yearlyGoal || '');
     if(val===null) return;
@@ -1197,6 +1270,7 @@ function openDetail(id){
         </div>
       </div>
       <div class="field"><label>Data fine lettura</label><input type="date" id="fFinished" value="${b.dateFinished||''}"></div>
+      <div class="field"><label>Data inizio lettura <span style="opacity:.6;font-weight:400;">(per la sfida "lettura lampo")</span></label><input type="date" id="fStarted" value="${b.dateStarted||''}"></div>
       <div class="field"><label>Stile / mood</label>
         <div class="tagpick">${STYLE_TAGS.map(t=>`<button data-tagpick="${escapeHtml(t)}" class="${b.tags.includes(t)?'on':''}">${escapeHtml(t)}</button>`).join('')}</div>
       </div>
@@ -1317,6 +1391,7 @@ function openDetail(id){
       b.readFormat = document.getElementById('fFormat').value;
       b.pace = document.getElementById('fPace').value;
       b.dateFinished = document.getElementById('fFinished').value || null;
+      b.dateStarted = document.getElementById('fStarted').value || null;
       b.tags = curTags;
     }
     if(b.upcoming){
@@ -1386,7 +1461,41 @@ function renderExtra(){
 
   const yearBooks = readBooks.filter(b=>b.dateFinished && new Date(b.dateFinished).getFullYear()===extraYear);
 
-  let html = `<section class="block"><div class="block-head"><h2>Il tuo anno in libri</h2>
+  const streaks = computeStreaks();
+  const flashReads = computeFlashReads();
+  const tbrProgress = computeTbrProgress();
+  let html = `<section class="block"><div class="block-head"><h2>Le tue challenge</h2></div>
+    <div class="wrapped-grid">
+      <div class="challenge-card ${streaks.current>=7?'gold':''}">
+        <div class="challenge-icon">🏅</div>
+        <div class="challenge-title">Settimana oro</div>
+        <div class="challenge-sub">${Math.min(streaks.current,7)}/7 giorni consecutivi</div>
+        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${Math.min(100,streaks.current/7*100)}%;"></div></div>
+        <div class="challenge-record">record: ${streaks.best} giorni</div>
+      </div>
+      <div class="challenge-card ${streaks.best>=30?'gold':''}">
+        <div class="challenge-icon">🌕</div>
+        <div class="challenge-title">Mese oro</div>
+        <div class="challenge-sub">${Math.min(streaks.current,30)}/30 giorni consecutivi</div>
+        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${Math.min(100,streaks.current/30*100)}%;"></div></div>
+        <div class="challenge-record">record: ${streaks.best} giorni</div>
+      </div>
+      <div class="challenge-card ${flashReads.length>0?'gold':''}">
+        <div class="challenge-icon">⚡</div>
+        <div class="challenge-title">Lettura lampo</div>
+        <div class="challenge-sub">${flashReads.length} libri finiti in 48 ore</div>
+        ${flashReads.length ? `<div class="challenge-record">ultimo: ${escapeHtml(flashReads[0].title)}</div>` : ''}
+      </div>
+      <div class="challenge-card ${tbrProgress.total>0 && tbrProgress.done===tbrProgress.total?'gold':''}">
+        <div class="challenge-icon">📚</div>
+        <div class="challenge-title">Finisci la TBR</div>
+        <div class="challenge-sub">${tbrProgress.done}/${tbrProgress.total} libri del piano letti</div>
+        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${tbrProgress.total? (tbrProgress.done/tbrProgress.total*100):0}%;"></div></div>
+      </div>
+    </div>
+  </section>`;
+
+  html += `<section class="block"><div class="block-head"><h2>Il tuo anno in libri</h2>
     <select id="yearPicker" style="background:var(--bg-elevated);border:1px solid var(--hairline);color:var(--parchment);border-radius:7px;padding:5px 9px;font-size:12px;">
       ${availableYears.length ? availableYears.map(y=>`<option value="${y}" ${y===extraYear?'selected':''}>${y}</option>`).join('') : `<option>${extraYear}</option>`}
     </select>
