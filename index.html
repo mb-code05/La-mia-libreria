@@ -227,16 +227,19 @@ section.block{ margin-bottom: 34px; }
   height:172px; border-radius: 3px 3px 2px 2px; cursor:pointer; position:relative; flex:none;
   box-shadow: 1px 0 0 rgba(255,255,255,0.08) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 3px 6px rgba(0,0,0,0.35);
   display:flex; align-items:center; justify-content:center; transition: transform .15s, box-shadow .15s;
+  overflow:hidden;
 }
 .spine:hover{ transform: translateY(-6px) rotate(0deg) !important; box-shadow: 1px 0 0 rgba(255,255,255,0.1) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 10px 16px rgba(0,0,0,0.45); z-index:2; }
-.spine-band{ position:absolute; left:2px; right:2px; height:4px; background: rgba(255,255,255,0.18); border-radius:2px; }
+.spine-band{ position:absolute; z-index:1; left:2px; right:2px; height:4px; background: rgba(255,255,255,0.18); border-radius:2px; }
 .spine-band.top{ top:10px; }
 .spine-band.bottom{ bottom:10px; }
+.spine-scrim{ position:absolute; z-index:1; inset:0; background: linear-gradient(180deg, rgba(10,6,15,0.35), rgba(10,6,15,0.55) 50%, rgba(10,6,15,0.7)); }
 .spine-title{
+  position:relative; z-index:2;
   writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
-  font-family:'Cormorant Garamond',serif; font-weight:700; font-size:11.5px; color: rgba(242,232,213,0.92);
-  max-height:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.01em;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  font-family:'Cormorant Garamond',serif; font-weight:700; font-size:11.5px; color: rgba(242,232,213,0.95);
+  max-height:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.01em;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
 .goal-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
@@ -1344,12 +1347,18 @@ function renderScaffale(){
       const h = strHash(b.id);
       const width = 30 + (h % 22); // 30–52px, gives visual variety like real spines
       const tilt = (h % 5===0) ? (h%2===0?-1.5:1.5) : 0; // occasional slight tilt for realism
-      html += `<div class="spine" data-open="${b.id}" title="${escapeHtml(b.title)}"
-          style="width:${width}px; background:linear-gradient(180deg, ${gs.c2}, ${gs.c1}); transform: rotate(${tilt}deg);">
-        <div class="spine-band top"></div>
+      const cached = b.coverUrl || customCoverCache[b.customCoverId];
+      const hasCover = !!cached;
+      const bg = hasCover ? `background-image:url('${cached}'); background-size:cover; background-position:center;` : `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
+      const loadingAttr = (!hasCover && b.customCoverId) ? ' data-spine-pending="1"' : '';
+      html += `<div class="spine${hasCover?' has-img':''}" data-open="${b.id}"${loadingAttr} title="${escapeHtml(b.title)}"
+          style="width:${width}px; ${bg} transform: rotate(${tilt}deg);">
+        ${hasCover ? '<div class="spine-scrim"></div>' : `<div class="spine-band top"></div><div class="spine-band bottom"></div>`}
         <div class="spine-title">${escapeHtml(b.title)}</div>
-        <div class="spine-band bottom"></div>
       </div>`;
+      if(!hasCover && b.customCoverId){
+        fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchSpineCover(b.id, data); });
+      }
     });
     html += `</div>`;
     html += `</section>`;
@@ -1357,6 +1366,20 @@ function renderScaffale(){
 
   panel.innerHTML = html;
   wireCommon(panel);
+}
+function patchSpineCover(bookId, dataUrl){
+  document.querySelectorAll(`.spine[data-open="${bookId}"]`).forEach(el=>{
+    el.style.backgroundImage = `url('${dataUrl}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.classList.add('has-img');
+    if(!el.querySelector('.spine-scrim')){
+      const scrim = document.createElement('div');
+      scrim.className = 'spine-scrim';
+      el.insertBefore(scrim, el.firstChild);
+    }
+    el.querySelectorAll('.spine-band').forEach(b=>b.remove());
+  });
 }
 
 /* ================= RENDER: EXTRA (yearly stats + quote wall) ================= */
