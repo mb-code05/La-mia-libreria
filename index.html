@@ -1353,8 +1353,7 @@ function renderScaffale(){
       const loadingAttr = (!hasCover && b.customCoverId) ? ' data-spine-pending="1"' : '';
       html += `<div class="spine${hasCover?' has-img':''}" data-open="${b.id}"${loadingAttr} title="${escapeHtml(b.title)}"
           style="width:${width}px; ${bg} transform: rotate(${tilt}deg);">
-        ${hasCover ? '<div class="spine-scrim"></div>' : `<div class="spine-band top"></div><div class="spine-band bottom"></div>`}
-        <div class="spine-title">${escapeHtml(b.title)}</div>
+        ${hasCover ? '' : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
       </div>`;
       if(!hasCover && b.customCoverId){
         fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchSpineCover(b.id, data); });
@@ -1373,12 +1372,7 @@ function patchSpineCover(bookId, dataUrl){
     el.style.backgroundSize = 'cover';
     el.style.backgroundPosition = 'center';
     el.classList.add('has-img');
-    if(!el.querySelector('.spine-scrim')){
-      const scrim = document.createElement('div');
-      scrim.className = 'spine-scrim';
-      el.insertBefore(scrim, el.firstChild);
-    }
-    el.querySelectorAll('.spine-band').forEach(b=>b.remove());
+    el.querySelectorAll('.spine-band, .spine-title, .spine-scrim').forEach(x=>x.remove());
   });
 }
 
