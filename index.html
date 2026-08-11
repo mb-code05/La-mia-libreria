@@ -1242,6 +1242,9 @@ function openDetail(id){
       </div>
     </div>
 
+    <div id="startedFieldWrap" style="display:${b.status!=='toread'?'block':'none'}">
+      <div class="field"><label>Data inizio lettura <span style="opacity:.6;font-weight:400;">(per la sfida "lettura lampo")</span></label><input type="date" id="fStarted" value="${b.dateStarted||''}"></div>
+    </div>
     <div id="reviewFields" style="display:${b.status==='read'?'block':'none'}">
       <div class="field"><label>Voto</label>
         <div class="star-input" id="starInput">
@@ -1270,7 +1273,6 @@ function openDetail(id){
         </div>
       </div>
       <div class="field"><label>Data fine lettura</label><input type="date" id="fFinished" value="${b.dateFinished||''}"></div>
-      <div class="field"><label>Data inizio lettura <span style="opacity:.6;font-weight:400;">(per la sfida "lettura lampo")</span></label><input type="date" id="fStarted" value="${b.dateStarted||''}"></div>
       <div class="field"><label>Stile / mood</label>
         <div class="tagpick">${STYLE_TAGS.map(t=>`<button data-tagpick="${escapeHtml(t)}" class="${b.tags.includes(t)?'on':''}">${escapeHtml(t)}</button>`).join('')}</div>
       </div>
@@ -1338,6 +1340,15 @@ function openDetail(id){
     modal.querySelectorAll('[data-set-status]').forEach(x=>x.classList.remove('active'));
     el.classList.add('active');
     document.getElementById('reviewFields').style.display = curStatus==='read' ? 'block' : 'none';
+    document.getElementById('startedFieldWrap').style.display = curStatus!=='toread' ? 'block' : 'none';
+    if(curStatus!=='toread'){
+      const sEl = document.getElementById('fStarted');
+      if(sEl && !sEl.value) sEl.value = todayISO();
+    }
+    if(curStatus==='read'){
+      const fEl = document.getElementById('fFinished');
+      if(fEl && !fEl.value) fEl.value = todayISO();
+    }
   }));
   modal.querySelectorAll('[data-set-genre]').forEach(el=> el.addEventListener('click', ()=>{
     curGenre = el.dataset.setGenre;
@@ -1383,6 +1394,9 @@ function openDetail(id){
       b.coverUrl = null;
       b.customCoverId = null;
     }
+    // dateStarted is meaningful for both "reading" and "read" — save it whenever present
+    const startedVal = document.getElementById('fStarted').value || null;
+    if(curStatus==='reading' || curStatus==='read') b.dateStarted = startedVal;
     if(curStatus==='read'){
       b.rating = curRating;
       b.reviewPlot = document.getElementById('fReviewPlot').value.trim();
@@ -1391,7 +1405,6 @@ function openDetail(id){
       b.readFormat = document.getElementById('fFormat').value;
       b.pace = document.getElementById('fPace').value;
       b.dateFinished = document.getElementById('fFinished').value || null;
-      b.dateStarted = document.getElementById('fStarted').value || null;
       b.tags = curTags;
     }
     if(b.upcoming){
@@ -1718,7 +1731,14 @@ async function boot(){
   await migrateReviewFields();
   render();
   runCoverQueue();
-  if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  // Actively remove any previously-installed service worker and its caches —
+  // it was causing stale versions of the app to silently overwrite newer data.
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister())).catch(()=>{});
+  }
+  if(window.caches){
+    caches.keys().then(keys => keys.forEach(k => caches.delete(k))).catch(()=>{});
+  }
 }
 (function start(){
   const saved = getSavedConfig();
