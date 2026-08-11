@@ -137,14 +137,13 @@ section.block{ margin-bottom: 34px; }
 .cover-card{
   position:relative; aspect-ratio: 2/3; border-radius: 8px; cursor:pointer; overflow:hidden;
   background: linear-gradient(155deg, var(--gc1), var(--gc2));
-  box-shadow: -3px 0 0 rgba(0,0,0,0.18) inset, 0 6px 16px rgba(0,0,0,0.35);
-  transition: transform .18s, box-shadow .18s;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  transition: transform .18s;
 }
-.cover-card:hover{ transform: translateY(-4px) rotate(-0.5deg); box-shadow: -3px 0 0 rgba(0,0,0,0.18) inset, 0 14px 26px rgba(0,0,0,0.45); }
+.cover-card:hover{ transform: translateY(-4px); }
 .cover-card::before{
   content:''; position:absolute; inset:0;
-  background: repeating-linear-gradient(115deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 2px, transparent 2px, transparent 9px);
-  mix-blend-mode: overlay; opacity:.5; transition: opacity .2s;
+  background: rgba(255,255,255,0.04); opacity:.5; transition: opacity .2s;
 }
 .cover-card.has-cover::before{ opacity:0; }
 .cover-card.cover-loading::before{ animation: coverPulse 1.4s ease-in-out infinite; }
@@ -155,7 +154,7 @@ section.block{ margin-bottom: 34px; }
 .cover-content .ct{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:14.5px; line-height:1.15; color:var(--parchment); }
 .cover-content .ca{ font-size:10px; color: rgba(242,232,213,0.75); margin-top:3px; }
 .cover-stars{ position:absolute; top:8px; left:8px; z-index:2; font-size:9.5px; color:var(--gold); letter-spacing:1px; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
-.cover-badge{ position:absolute; top:8px; right:8px; z-index:2; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(10,6,15,0.55); backdrop-filter: blur(2px); }
+.cover-badge{ position:absolute; top:8px; right:8px; z-index:2; width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: rgba(10,6,15,0.75); }
 .cover-badge svg{ width:11px; height:11px; }
 .cover-ribbon{ position:absolute; top:0; left:14px; width:16px; height:26px; background: var(--gold); z-index:2; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); }
 .cover-date{ position:absolute; bottom:9px; left:9px; right:9px; z-index:2; font-size:9px; color: var(--gold); font-weight:800; letter-spacing:.03em; }
@@ -293,7 +292,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-08-07.2';
+const APP_VERSION = '2026-08-07.3';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
