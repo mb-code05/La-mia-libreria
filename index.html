@@ -293,6 +293,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
+const APP_VERSION = '2026-08-07.2';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -554,7 +555,7 @@ function openSettingsScreen(){
   const modal = document.getElementById('modalInner');
   modal.innerHTML = `
     <h3>Impostazioni</h3>
-    <div class="modal-sub">Codice libreria attuale: <b>${escapeHtml(saved?.code||'—')}</b></div>
+    <div class="modal-sub">Codice libreria attuale: <b>${escapeHtml(saved?.code||'—')}</b> · versione app: <b>${APP_VERSION}</b></div>
     <p class="setup-p">Per collegare un altro dispositivo alla stessa libreria, apri questa app lì e inserisci la stessa identica configurazione e lo stesso codice.</p>
     <div class="field"><label>Backup</label>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
