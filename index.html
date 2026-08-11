@@ -445,7 +445,7 @@ async function fetchCoverFor(book){
     if(!res.ok) throw new Error('bad response');
     const data = await res.json();
     const doc = data.docs && data.docs[0];
-    book.coverUrl = (doc && doc.cover_i) ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : null;
+    book.coverUrl = (doc && doc.cover_i) ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : null;
   } catch(e){
     book.coverUrl = null;
   }
@@ -740,6 +740,17 @@ function computeTbrProgress(){
   const q = getQueue();
   const done = q.filter(b=>b.status==='read').length;
   return { done, total: q.length };
+}
+
+async function migrateCoverSizes(){
+  let changed = false;
+  books.forEach(b=>{
+    if(b.coverUrl && b.coverUrl.includes('covers.openlibrary.org') && b.coverUrl.endsWith('-L.jpg')){
+      b.coverUrl = b.coverUrl.replace('-L.jpg', '-M.jpg');
+      changed = true;
+    }
+  });
+  if(changed) await saveData();
 }
 
 /* ================= STATE / STORAGE ================= */
@@ -1729,6 +1740,7 @@ async function boot(){
   await migrateDuplicateIds();
   await migrateInlineCovers();
   await migrateReviewFields();
+  await migrateCoverSizes();
   render();
   runCoverQueue();
   // Actively remove any previously-installed service worker and its caches —
