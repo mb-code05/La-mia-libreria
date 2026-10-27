@@ -262,13 +262,16 @@ section.block{ margin-bottom: 34px; }
 .wrapped-num{ font-family:'Cormorant Garamond',serif; font-size:26px; font-weight:700; color:var(--gold); line-height:1.1; }
 .wrapped-label{ font-size:11px; color:var(--lavender); margin-top:5px; }
 
-.quote-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap:12px; }
-.quote-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 18px 16px 14px; transition: transform .18s; position:relative; }
-.quote-card:hover{ transform: translateY(-2px); }
-.quote-mark{ font-family:'Cormorant Garamond',serif; font-size:40px; color: var(--gold); opacity:.4; line-height:0.5; margin-bottom:4px; }
-.quote-text{ font-family:'Cormorant Garamond',serif; font-style:italic; font-size:15px; line-height:1.4; color:var(--parchment); white-space:pre-wrap; }
-.quote-attrib{ font-size:11px; color:var(--lavender-dim); margin-top:12px; display:flex; align-items:center; gap:6px; }
-.quote-dot{ width:6px; height:6px; border-radius:50%; flex:none; }
+.quote-list{ display:flex; flex-direction:column; }
+.quote-row{ display:flex; gap:16px; align-items:flex-start; padding:16px 4px; border-bottom:1px solid var(--hairline); cursor:pointer; }
+.quote-row:first-child{ padding-top:4px; }
+.quote-row:last-child{ border-bottom:none; }
+.quote-row:hover .quote-line{ color:#fff; }
+.quote-cover{ width:46px; height:69px; flex:none; border-radius:4px; overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,0.35); }
+.quote-cover img{ width:100%; height:100%; object-fit:cover; display:block; }
+.quote-body{ flex:1; min-width:0; }
+.quote-line{ font-family:'Cormorant Garamond',serif; font-style:italic; font-size:18px; line-height:1.4; color:var(--parchment); }
+.quote-source{ font-size:11.5px; color:var(--lavender-dim); margin-top:7px; }
 
 .setup-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 22px; max-width: 480px; }
 .setup-p{ font-size:13px; color: var(--lavender); line-height:1.5; margin: 0 0 16px; }
@@ -288,7 +291,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-10-27.1';
+const APP_VERSION = '2026-10-27.2';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1213,7 +1216,7 @@ function openDetail(id){
       </div>
       <div class="field"><label>Trama e sviluppo della storia</label><textarea id="fReviewPlot" placeholder="Come si sviluppa la trama, ritmo, colpi di scena…">${escapeHtml(b.reviewPlot)}</textarea></div>
       <div class="field"><label>Personaggi preferiti</label><textarea id="fReviewCharacters" placeholder="Chi ti è rimasto nel cuore e perché…" style="min-height:55px;">${escapeHtml(b.reviewCharacters)}</textarea></div>
-      <div class="field"><label>Citazioni preferite</label><textarea id="fReviewQuotes" placeholder="Le frasi che vuoi ricordare…" style="min-height:55px;">${escapeHtml(b.reviewQuotes)}</textarea></div>
+      <div class="field"><label>Citazioni preferite <span style="opacity:.6;font-weight:400;">(una per riga)</span></label><textarea id="fReviewQuotes" placeholder="Le frasi che vuoi ricordare, una per riga…" style="min-height:55px;">${escapeHtml(b.reviewQuotes)}</textarea></div>
       <div class="two-col">
         <div class="field"><label>Formato</label>
           <select id="fFormat">
@@ -1489,18 +1492,32 @@ function renderExtra(){
     </div></section>`;
   }
 
-  const quoteBooks = books.filter(b=>b.reviewQuotes && b.reviewQuotes.trim());
-  html += `<section class="block"><div class="block-head"><h2>Bacheca delle citazioni</h2><span class="sub">${quoteBooks.length} libri con citazioni salvate</span></div>`;
-  if(quoteBooks.length===0){
-    html += `<div class="empty-note">Non hai ancora salvato citazioni. Apri un libro letto e scrivine una nella sezione "Citazioni preferite".</div>`;
+  // One row per quote: every non-empty line of "Citazioni preferite" is its own quote
+  const quoteRows = [];
+  books.forEach(b=>{
+    if(!b.reviewQuotes) return;
+    b.reviewQuotes.split('\n').map(l=>l.trim()).filter(Boolean).forEach(line=>{
+      const clean = line.replace(/^["“”«»]+\s*/, '').replace(/\s*["“”«»]+$/, '');
+      if(clean) quoteRows.push({ book:b, text:clean });
+    });
+  });
+  quoteRows.sort((a,b)=> a.book.author.localeCompare(b.book.author) || a.book.saga.localeCompare(b.book.saga) || a.book.order-b.book.order);
+
+  html += `<section class="block"><div class="block-head"><h2>Citazioni</h2><span class="sub">${quoteRows.length} ${quoteRows.length===1?'citazione salvata':'citazioni salvate'}</span></div>`;
+  if(quoteRows.length===0){
+    html += `<div class="empty-note">Non hai ancora salvato citazioni. Apri un libro letto e scrivine una nella sezione "Citazioni preferite" (una per riga).</div>`;
   } else {
-    html += `<div class="quote-grid">`;
-    quoteBooks.forEach(b=>{
+    html += `<div class="quote-list">`;
+    quoteRows.forEach(q=>{
+      const b = q.book;
       const gs = genreStyle(b.genre);
-      html += `<div class="quote-card" data-open="${b.id}" style="cursor:pointer;">
-        <div class="quote-mark">"</div>
-        <div class="quote-text">${escapeHtml(b.reviewQuotes)}</div>
-        <div class="quote-attrib"><span class="quote-dot" style="background:${gs.dot}"></span>${escapeHtml(b.title)} — ${escapeHtml(b.author)}</div>
+      const cover = b.coverUrl || customCoverCache[b.customCoverId];
+      html += `<div class="quote-row" data-open="${b.id}">
+        <div class="quote-cover" data-qcover="${b.id}" style="background:linear-gradient(155deg, ${gs.c1}, ${gs.c2});">${cover?`<img src="${cover}" loading="lazy">`:''}</div>
+        <div class="quote-body">
+          <div class="quote-line">“${escapeHtml(q.text)}”</div>
+          <div class="quote-source">${escapeHtml(b.title)} · ${escapeHtml(b.author)}</div>
+        </div>
       </div>`;
     });
     html += `</div>`;
@@ -1509,6 +1526,15 @@ function renderExtra(){
 
   panel.innerHTML = html;
   wireCommon(panel);
+  // covers uploaded by hand live in a separate store: load the missing ones and fill them in
+  const pendingCovers = new Set();
+  quoteRows.forEach(q=>{ if(!q.book.coverUrl && q.book.customCoverId && !customCoverCache[q.book.customCoverId]) pendingCovers.add(q.book); });
+  pendingCovers.forEach(b=>{
+    fetchCustomCover(b.customCoverId).then(data=>{
+      if(!data) return;
+      document.querySelectorAll(`[data-qcover="${b.id}"]`).forEach(el=>{ el.innerHTML = `<img src="${data}" loading="lazy">`; });
+    });
+  });
   const yp = document.getElementById('yearPicker');
   if(yp) yp.addEventListener('change', ()=>{ extraYear = parseInt(yp.value,10); renderExtra(); });
 }
