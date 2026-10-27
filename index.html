@@ -241,10 +241,6 @@ section.block{ margin-bottom: 34px; }
   text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
-.checkin-btn{ width:100%; background: var(--bg-card); border:1px solid var(--hairline); color:var(--parchment); font-size:15px; font-weight:700; padding:14px; border-radius: var(--radius); cursor:pointer; transition: transform .15s, background .15s; }
-.checkin-btn:hover{ transform: translateY(-2px); }
-.checkin-btn.done{ background: var(--emerald-soft); color: var(--emerald); border-color: transparent; }
-
 .challenge-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align:center; transition: border-color .2s; }
 .challenge-card.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 .challenge-icon{ font-size:26px; margin-bottom:4px; }
@@ -292,7 +288,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-08-07.3';
+const APP_VERSION = '2026-10-27.1';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -695,40 +691,6 @@ async function migrateReviewFields(){
 
 /* ================= READING CHALLENGES ================= */
 function todayISO(){ return new Date().toISOString().slice(0,10); }
-function isCheckedInToday(){ return readingLog.includes(todayISO()); }
-async function checkInToday(){
-  const t = todayISO();
-  if(!readingLog.includes(t)){ readingLog.push(t); readingLog.sort(); await saveData(); }
-}
-async function undoCheckInToday(){
-  const t = todayISO();
-  readingLog = readingLog.filter(d=>d!==t);
-  await saveData();
-}
-function computeStreaks(){
-  const days = new Set(readingLog);
-  // current streak: walk backwards from today while consecutive days are present
-  let current = 0;
-  let cursor = new Date();
-  while(true){
-    const iso = cursor.toISOString().slice(0,10);
-    if(days.has(iso)){ current++; cursor.setDate(cursor.getDate()-1); }
-    else break;
-  }
-  // best streak ever: scan sorted unique days for longest consecutive run
-  const sorted = [...days].sort();
-  let best = 0, run = 0, prev = null;
-  sorted.forEach(iso=>{
-    const d = new Date(iso+'T00:00:00');
-    if(prev){
-      const diffDays = Math.round((d-prev)/86400000);
-      run = (diffDays===1) ? run+1 : 1;
-    } else run = 1;
-    if(run>best) best = run;
-    prev = d;
-  });
-  return { current, best };
-}
 function computeFlashReads(){
   return books.filter(b=>{
     if(!b.dateStarted || !b.dateFinished) return false;
@@ -756,7 +718,6 @@ async function migrateCoverSizes(){
 /* ================= STATE / STORAGE ================= */
 let books = [];
 let yearlyGoal = null;
-let readingLog = []; // array of 'YYYY-MM-DD' strings, one per day the user checked in as "read today"
 let activeTab = 'panoramica';
 let searchTerm = '';
 let statusFilter = 'tutti';
@@ -777,7 +738,6 @@ async function loadData(){
   if(snap.exists && snap.data().books){
     books = snap.data().books;
     yearlyGoal = snap.data().yearlyGoal ?? null;
-    readingLog = snap.data().readingLog ?? [];
     return;
   }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
@@ -813,7 +773,7 @@ async function saveData(){
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, yearlyGoal, readingLog, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, updatedAt: Date.now() });
     setSaveStatus('saved');
   }catch(e){
     console.error('Errore salvataggio', e);
@@ -953,13 +913,6 @@ function renderPanoramica(){
 
   html += `<section class="block"><button class="dice-btn" id="btnDicePick">🎲 Cosa leggo stasera?</button></section>`;
 
-  const streaks = computeStreaks();
-  html += `<section class="block">
-    <button class="checkin-btn ${isCheckedInToday()?'done':''}" id="btnCheckIn">
-      ${isCheckedInToday() ? `✓ Hai letto oggi — striscia di ${streaks.current} giorni 🔥` : '📖 Ho letto oggi'}
-    </button>
-  </section>`;
-
   html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">consigliato per te</span></div><div class="rec-grid">`;
   if(continues.length===0 && starts.length===0) html += `<div class="empty-note">Nessun suggerimento — aggiungi qualche libro dalla libreria.</div>`;
   continues.slice(0,3).forEach(c=>{
@@ -994,10 +947,6 @@ function renderPanoramica(){
   panel.innerHTML = html;
   wireCommon(panel);
   document.getElementById('btnDicePick').addEventListener('click', openDicePick);
-  document.getElementById('btnCheckIn').addEventListener('click', async ()=>{
-    if(isCheckedInToday()) await undoCheckInToday(); else await checkInToday();
-    render();
-  });
   document.getElementById('goalEditLink').addEventListener('click', async ()=>{
     const val = prompt('Quanti libri vuoi leggere entro fine ' + thisYear + '?', yearlyGoal || '');
     if(val===null) return;
@@ -1485,25 +1434,10 @@ function renderExtra(){
 
   const yearBooks = readBooks.filter(b=>b.dateFinished && new Date(b.dateFinished).getFullYear()===extraYear);
 
-  const streaks = computeStreaks();
   const flashReads = computeFlashReads();
   const tbrProgress = computeTbrProgress();
   let html = `<section class="block"><div class="block-head"><h2>Le tue challenge</h2></div>
     <div class="wrapped-grid">
-      <div class="challenge-card ${streaks.current>=7?'gold':''}">
-        <div class="challenge-icon">🏅</div>
-        <div class="challenge-title">Settimana oro</div>
-        <div class="challenge-sub">${Math.min(streaks.current,7)}/7 giorni consecutivi</div>
-        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${Math.min(100,streaks.current/7*100)}%;"></div></div>
-        <div class="challenge-record">record: ${streaks.best} giorni</div>
-      </div>
-      <div class="challenge-card ${streaks.best>=30?'gold':''}">
-        <div class="challenge-icon">🌕</div>
-        <div class="challenge-title">Mese oro</div>
-        <div class="challenge-sub">${Math.min(streaks.current,30)}/30 giorni consecutivi</div>
-        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${Math.min(100,streaks.current/30*100)}%;"></div></div>
-        <div class="challenge-record">record: ${streaks.best} giorni</div>
-      </div>
       <div class="challenge-card ${flashReads.length>0?'gold':''}">
         <div class="challenge-icon">⚡</div>
         <div class="challenge-title">Lettura lampo</div>
