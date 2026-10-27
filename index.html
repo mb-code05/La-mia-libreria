@@ -290,6 +290,12 @@ section.block{ margin-bottom: 34px; }
   h1.title{ font-size: 32px; }
   .two-col{ grid-template-columns:1fr; }
 }
+
+.plan-chips{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px;}
+.plan-tools{display:flex;gap:8px;margin-bottom:10px;}
+.queue-handle{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none;font-size:22px;line-height:1;padding:8px 8px;color:var(--muted,#999);display:flex;align-items:center;}
+.queue-row{transition:transform .15s ease;}
+.queue-row.dragging{position:relative;z-index:5;transition:none;box-shadow:0 4px 14px rgba(0,0,0,.18);}
 </style>
 </head>
 <body>
@@ -298,7 +304,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-10-27.3';
+const APP_VERSION = '2026-10-27.4';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -329,7 +335,7 @@ function mk(author, saga, title, status, genre, opts={}){
     seriesPriority: opts.seriesPriority ?? null, seriesNote: opts.seriesNote || null,
     order: 0, rating: 0, review:'', reviewPlot:'', reviewCharacters:'', reviewQuotes:'', readFormat:'', pace:'', tags:[], dateStarted:null, dateFinished:null,
     coverUrl: null, coverChecked: false, customCoverId: null,
-    queueOrder: null, queueNote: ''
+    queueOrder: null, queuePlan: null, queueNote: ''
   };
 }
 function seedBooks(){
@@ -596,7 +602,7 @@ function openSettingsScreen(){
 }
 
 function exportBackup(){
-  const data = JSON.stringify({ books, exportedAt: new Date().toISOString() }, null, 2);
+  const data = JSON.stringify({ books, plans, yearlyGoal, exportedAt: new Date().toISOString() }, null, 2);
   const blob = new Blob([data], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -611,7 +617,9 @@ async function importBackupFile(file){
   const incoming = Array.isArray(parsed) ? parsed : parsed.books;
   if(!Array.isArray(incoming)) throw new Error('File non valido: non contiene una lista di libri.');
   books = incoming;
-  await saveData();
+  plans = Array.isArray(parsed.plans) ? parsed.plans : [];
+  if(!Array.isArray(parsed) && parsed.yearlyGoal != null) yearlyGoal = parsed.yearlyGoal;
+  await migratePlans(); // makes sure a plan exists and every planned book points to one (also saves)
 }
 
 /* ================= CUSTOM COVER STORAGE (kept out of the main document) ================= */
@@ -658,34 +666,79 @@ async function migrateDuplicateIds(){
   if(changed) await saveData();
 }
 
-/* ================= READING PLAN (manual ordered queue) ================= */
-function getQueue(){
-  return books.filter(b=>b.queueOrder!=null).sort((a,b)=>a.queueOrder-b.queueOrder);
+/* ================= READING PLANS (several manual ordered lists) ================= */
+function newPlanId(){ return 'plan-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function getPlanBooks(planId){
+  return books.filter(b=>b.queuePlan===planId && b.queueOrder!=null).sort((a,b)=>a.queueOrder-b.queueOrder);
 }
-function renormalizeQueue(list){
-  list.forEach((b,i)=> b.queueOrder = i+1);
+function getAllPlannedBooks(){
+  return books.filter(b=>b.queuePlan && b.queueOrder!=null);
 }
-async function addToQueue(book){
-  if(book.queueOrder!=null) return;
-  const q = getQueue();
-  book.queueOrder = q.length + 1;
-  await saveData();
+function getPlan(planId){ return plans.find(p=>p.id===planId) || null; }
+function planPosition(book){
+  if(!book.queuePlan || book.queueOrder==null) return null;
+  return getPlanBooks(book.queuePlan).findIndex(b=>b.id===book.id) + 1;
 }
-async function removeFromQueue(book){
+function renormalizePlan(planId){
+  getPlanBooks(planId).forEach((b,i)=> b.queueOrder = i+1);
+}
+async function addToPlan(book, planId){
+  // a book lives in one plan at a time: leaving a previous plan closes the gap there
+  const oldPlan = book.queuePlan;
+  if(oldPlan === planId && book.queueOrder!=null) return;
   book.queueOrder = null;
-  book.queueNote = '';
-  const q = getQueue();
-  renormalizeQueue(q);
+  if(oldPlan) renormalizePlan(oldPlan);
+  book.queuePlan = planId;
+  book.queueOrder = getPlanBooks(planId).length + 1;
   await saveData();
 }
-async function moveInQueue(book, dir){
-  const q = getQueue();
-  const idx = q.findIndex(b=>b.id===book.id);
-  const swapIdx = idx + dir;
-  if(idx===-1 || swapIdx<0 || swapIdx>=q.length) return;
-  [q[idx], q[swapIdx]] = [q[swapIdx], q[idx]];
-  renormalizeQueue(q);
+async function removeFromPlan(book){
+  const oldPlan = book.queuePlan;
+  book.queueOrder = null;
+  book.queuePlan = null;
+  book.queueNote = '';
+  if(oldPlan) renormalizePlan(oldPlan);
   await saveData();
+}
+async function reorderPlan(planId, orderedIds){
+  orderedIds.forEach((id,i)=>{
+    const b = books.find(x=>x.id===id);
+    if(b) b.queueOrder = i+1;
+  });
+  await saveData();
+}
+async function createPlan(name){
+  const plan = { id:newPlanId(), name: name.trim() };
+  plans.push(plan);
+  await saveData();
+  return plan;
+}
+async function renamePlan(planId, name){
+  const p = getPlan(planId);
+  if(p){ p.name = name.trim(); await saveData(); }
+}
+async function deletePlan(planId){
+  books.forEach(b=>{
+    if(b.queuePlan===planId){ b.queuePlan = null; b.queueOrder = null; b.queueNote = ''; }
+  });
+  plans = plans.filter(p=>p.id!==planId);
+  await saveData();
+}
+// pure helper: where would the dragged row land? (centers = original vertical centers of all rows)
+function computeDropIndex(centers, fromIdx, draggedCenter){
+  return centers.filter((c,i)=> i!==fromIdx && c < draggedCenter).length;
+}
+async function migratePlans(){
+  let changed = false;
+  if(!Array.isArray(plans)) { plans = []; changed = true; }
+  if(plans.length===0){ plans.push({ id:'plan-main', name:'Il mio piano' }); changed = true; }
+  books.forEach(b=>{
+    if(b.queueOrder!=null && (!b.queuePlan || !getPlan(b.queuePlan))){
+      b.queuePlan = plans[0].id; changed = true;
+    }
+    if(b.queueOrder==null && b.queuePlan){ b.queuePlan = null; changed = true; }
+  });
+  if(changed) await saveData();
 }
 
 async function migrateReviewFields(){
@@ -709,7 +762,7 @@ function computeFlashReads(){
   }).sort((a,b)=> new Date(b.dateFinished) - new Date(a.dateFinished));
 }
 function computeTbrProgress(){
-  const q = getQueue();
+  const q = getAllPlannedBooks();
   const done = q.filter(b=>b.status==='read').length;
   return { done, total: q.length };
 }
@@ -728,6 +781,8 @@ async function migrateCoverSizes(){
 /* ================= STATE / STORAGE ================= */
 let books = [];
 let yearlyGoal = null;
+let plans = []; // [{id, name}] — the user's reading plans
+let activePlanId = null;
 let activeTab = 'panoramica';
 let searchTerm = '';
 let statusFilter = 'tutti';
@@ -748,6 +803,7 @@ async function loadData(){
   if(snap.exists && snap.data().books){
     books = snap.data().books;
     yearlyGoal = snap.data().yearlyGoal ?? null;
+    plans = snap.data().plans ?? [];
     return;
   }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
@@ -783,7 +839,7 @@ async function saveData(){
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, yearlyGoal, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, plans, updatedAt: Date.now() });
     setSaveStatus('saved');
   }catch(e){
     console.error('Errore salvataggio', e);
@@ -974,17 +1030,29 @@ function renderLetture(){
   const {continues, starts} = buildRecommendations();
   const upcoming = buildUpcoming();
   const noDate = books.filter(b=>b.upcoming && !b.releaseDate);
-  const queue = getQueue();
+  if(!getPlan(activePlanId)) activePlanId = plans[0] ? plans[0].id : null;
+  const queue = activePlanId ? getPlanBooks(activePlanId) : [];
+  const activePlan = getPlan(activePlanId);
 
-  let html = `<section class="block"><div class="block-head"><h2>Il tuo piano di lettura</h2><span class="sub">l'ordine lo decidi tu</span></div>`;
+  let html = `<section class="block"><div class="block-head"><h2>I tuoi piani di lettura</h2><span class="sub">trascina ≡ per riordinare</span></div>`;
+  html += `<div class="plan-chips">`;
+  plans.forEach(p=>{
+    const n = getPlanBooks(p.id).length;
+    html += `<button class="chip${p.id===activePlanId?' active':''}" data-plan="${p.id}">${escapeHtml(p.name)} · ${n}</button>`;
+  });
+  html += `<button class="chip" id="btnNewPlan">+ Nuovo piano</button></div>`;
+  if(activePlan){
+    html += `<div class="plan-tools"><button class="btn-mark" id="btnRenamePlan" type="button">Rinomina</button>${plans.length>1?`<button class="btn-mark" id="btnDeletePlan" type="button" style="background:var(--rose-soft);color:var(--rose);">Elimina piano</button>`:''}</div>`;
+  }
   if(queue.length===0){
-    html += `<div class="empty-note">Non hai ancora messo nessun libro nel piano. Apri un libro qualsiasi e usa "Aggiungi al piano di lettura" per iniziare a costruire il tuo ordine.</div>`;
+    html += `<div class="empty-note">Questo piano è vuoto. Apri un libro qualsiasi e scegli "${activePlan?escapeHtml(activePlan.name):'un piano'}" nel campo "Piano di lettura".</div>`;
   } else {
-    html += `<div class="queue-list">`;
+    html += `<div class="queue-list" id="queueList">`;
     queue.forEach((b,i)=>{
       const gs = genreStyle(b.genre);
       const releaseBadge = b.upcoming ? `<span class="queue-release">${b.releaseDate?fmtDate(b.releaseDate):'in arrivo'}</span>` : '';
-      html += `<div class="queue-row">
+      html += `<div class="queue-row" data-qid="${b.id}">
+        <div class="queue-handle" data-handle="${b.id}" title="Trascina per riordinare">≡</div>
         <div class="queue-num">${i+1}</div>
         <div class="queue-dot" style="background:${gs.dot}"></div>
         <div class="queue-info" data-open="${b.id}" style="cursor:pointer;">
@@ -993,8 +1061,6 @@ function renderLetture(){
           <input type="text" class="queue-note-input" data-note="${b.id}" placeholder="Aggiungi una nota (es. rileggi prima di ottobre)…" value="${escapeHtml(b.queueNote||'')}">
         </div>
         <div class="queue-actions">
-          <button data-qmove="${b.id}:-1" title="Sposta su" ${i===0?'disabled':''}>▲</button>
-          <button data-qmove="${b.id}:1" title="Sposta gi\u00f9" ${i===queue.length-1?'disabled':''}>▼</button>
           <button data-qremove="${b.id}" title="Togli dal piano">✕</button>
         </div>
       </div>`;
@@ -1037,20 +1103,94 @@ function renderLetture(){
 
   panel.innerHTML = html;
   wireCommon(panel);
-  panel.querySelectorAll('[data-qmove]').forEach(el=> el.addEventListener('click', async ()=>{
-    const [id, dir] = el.dataset.qmove.split(':');
-    const b = books.find(x=>x.id===id);
-    if(b){ await moveInQueue(b, parseInt(dir,10)); renderLetture(); }
-  }));
+  panel.querySelectorAll('[data-plan]').forEach(el=> el.addEventListener('click', ()=>{ activePlanId = el.dataset.plan; renderLetture(); }));
+  const bNew = document.getElementById('btnNewPlan');
+  if(bNew) bNew.addEventListener('click', async ()=>{
+    const name = (prompt('Nome del nuovo piano (es. Autunno, Dicembre):')||'').trim();
+    if(!name) return;
+    activePlanId = (await createPlan(name)).id; renderLetture();
+  });
+  const bRen = document.getElementById('btnRenamePlan');
+  if(bRen) bRen.addEventListener('click', async ()=>{
+    const name = (prompt('Nuovo nome del piano:', activePlan.name)||'').trim();
+    if(!name) return;
+    await renamePlan(activePlanId, name); renderLetture();
+  });
+  const bDel = document.getElementById('btnDeletePlan');
+  if(bDel) bDel.addEventListener('click', async ()=>{
+    if(!confirm('Eliminare il piano "'+activePlan.name+'"? I libri restano in libreria, ma escono dal piano.')) return;
+    await deletePlan(activePlanId); activePlanId = plans[0] ? plans[0].id : null; renderLetture();
+  });
   panel.querySelectorAll('[data-qremove]').forEach(el=> el.addEventListener('click', async ()=>{
     const b = books.find(x=>x.id===el.dataset.qremove);
-    if(b){ await removeFromQueue(b); renderLetture(); }
+    if(b){ await removeFromPlan(b); renderLetture(); }
   }));
+  wireQueueDrag(panel);
   panel.querySelectorAll('[data-note]').forEach(el=>{
     el.addEventListener('click', e=> e.stopPropagation());
     el.addEventListener('change', async ()=>{
       const b = books.find(x=>x.id===el.dataset.note);
       if(b){ b.queueNote = el.value.trim(); await saveData(); }
+    });
+  });
+}
+
+function wireQueueDrag(panel){
+  const list = panel.querySelector('#queueList');
+  if(!list) return;
+  list.querySelectorAll('[data-handle]').forEach(handle=>{
+    handle.addEventListener('pointerdown', ev=>{
+      if(ev.button!==undefined && ev.button>0) return;
+      ev.preventDefault();
+      const rows = Array.from(list.querySelectorAll('.queue-row'));
+      const row = handle.closest('.queue-row');
+      const fromIdx = rows.indexOf(row);
+      const rects = rows.map(r=>r.getBoundingClientRect());
+      const centers = rects.map(r=> r.top + r.height/2 + window.scrollY);
+      const startY = ev.clientY + window.scrollY;
+      let curY = ev.clientY, dy = 0, raf = null, done = false;
+      row.classList.add('dragging');
+      try{ handle.setPointerCapture(ev.pointerId); }catch(e){}
+      const update = ()=>{
+        dy = (curY + window.scrollY) - startY;
+        row.style.transform = `translateY(${dy}px)`;
+        const to = computeDropIndex(centers, fromIdx, centers[fromIdx] + dy);
+        rows.forEach((r,i)=>{
+          if(i===fromIdx) return;
+          let shift = 0;
+          if(fromIdx<to && i>fromIdx && i<=to) shift = -rects[fromIdx].height;
+          if(fromIdx>to && i<fromIdx && i>=to) shift = rects[fromIdx].height;
+          r.style.transform = shift ? `translateY(${shift}px)` : '';
+        });
+      };
+      const tick = ()=>{
+        if(done) return;
+        const h = window.innerHeight;
+        if(curY < 70) window.scrollBy(0, -12);
+        else if(curY > h-70) window.scrollBy(0, 12);
+        update();
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+      const move = e=>{ curY = e.clientY; update(); };
+      const finish = async (cancel)=>{
+        if(done) return; done = true;
+        if(raf) cancelAnimationFrame(raf);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        window.removeEventListener('pointercancel', cancelH);
+        const to = computeDropIndex(centers, fromIdx, centers[fromIdx] + dy);
+        if(cancel || to===fromIdx){ rows.forEach(r=>{ r.style.transform=''; r.classList.remove('dragging'); }); return; }
+        const ids = rows.map(r=>r.dataset.qid);
+        const [m] = ids.splice(fromIdx,1); ids.splice(to,0,m);
+        await reorderPlan(activePlanId, ids);
+        renderLetture();
+      };
+      const up = ()=> finish(false);
+      const cancelH = ()=> finish(true);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', cancelH);
     });
   });
 }
@@ -1192,13 +1332,11 @@ function openDetail(id){
     </div>
 
     <div class="field"><label>Piano di lettura</label>
-      <div class="cover-manual-row">
-        <div class="cover-manual-actions" style="align-items:center;">
-          ${b.queueOrder!=null
-            ? `<span class="book-badge" style="background:var(--gold-soft);color:var(--gold);">posizione #${b.queueOrder}</span><button class="btn-mark" id="btnQueueToggle" type="button" style="background:var(--rose-soft);color:var(--rose);">Togli dal piano</button>`
-            : `<button class="btn-mark" id="btnQueueToggle" type="button">Aggiungi al piano di lettura</button>`}
-        </div>
-      </div>
+      <select id="planSelect">
+        <option value="">Nessun piano</option>
+        ${plans.map(p=>`<option value="${p.id}" ${b.queuePlan===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+      </select>
+      ${b.queuePlan && b.queueOrder!=null ? `<div class="meta" style="margin-top:6px;">posizione #${planPosition(b)} in questo piano</div>` : ''}
     </div>
 
     <div class="field"><label>Stato</label>
@@ -1338,16 +1476,17 @@ function openDetail(id){
     else { curTags.push(t); el.classList.add('on'); }
   }));
 
-  const queueBtn = document.getElementById('btnQueueToggle');
-  if(queueBtn) queueBtn.addEventListener('click', async ()=>{
-    if(b.queueOrder!=null) await removeFromQueue(b); else await addToQueue(b);
-    openDetail(id); // refresh modal to reflect new state
+  const planSel = document.getElementById('planSelect');
+  if(planSel) planSel.addEventListener('change', async ()=>{
+    if(planSel.value) await addToPlan(b, planSel.value); else await removeFromPlan(b);
+    openDetail(id);
   });
 
   document.getElementById('btnCloseDetail').addEventListener('click', closeModal);
   document.getElementById('btnDeleteBook').addEventListener('click', async ()=>{
     if(b.customCoverId) await deleteCustomCover(b.id);
     books = books.filter(x=>x.id!==id);
+    if(b.queuePlan) renormalizePlan(b.queuePlan);
     await saveData(); closeModal(); render();
   });
   document.getElementById('btnSaveDetail').addEventListener('click', async ()=>{
@@ -1749,6 +1888,7 @@ async function boot(){
   await migrateInlineCovers();
   await migrateReviewFields();
   await migrateCoverSizes();
+  await migratePlans();
   render();
   runCoverQueue();
   // Actively remove any previously-installed service worker and its caches —
