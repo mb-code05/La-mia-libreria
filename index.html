@@ -262,16 +262,23 @@ section.block{ margin-bottom: 34px; }
 .wrapped-num{ font-family:'Cormorant Garamond',serif; font-size:26px; font-weight:700; color:var(--gold); line-height:1.1; }
 .wrapped-label{ font-size:11px; color:var(--lavender); margin-top:5px; }
 
-.quote-list{ display:flex; flex-direction:column; }
-.quote-row{ display:flex; gap:16px; align-items:flex-start; padding:16px 4px; border-bottom:1px solid var(--hairline); cursor:pointer; }
-.quote-row:first-child{ padding-top:4px; }
-.quote-row:last-child{ border-bottom:none; }
-.quote-row:hover .quote-line{ color:#fff; }
-.quote-cover{ width:46px; height:69px; flex:none; border-radius:4px; overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,0.35); }
+.quote-toolbar{ display:flex; gap:8px; margin-bottom:14px; }
+.quote-accordion{ display:flex; flex-direction:column; gap:8px; }
+.qgroup{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); overflow:hidden; }
+.qgroup-head{ display:flex; align-items:center; gap:14px; padding:12px 14px; cursor:pointer; user-select:none; }
+.qgroup-head:hover{ background: rgba(255,255,255,0.03); }
+.quote-cover{ width:38px; height:57px; flex:none; border-radius:4px; overflow:hidden; box-shadow:0 2px 6px rgba(0,0,0,0.35); }
 .quote-cover img{ width:100%; height:100%; object-fit:cover; display:block; }
-.quote-body{ flex:1; min-width:0; }
-.quote-line{ font-family:'Cormorant Garamond',serif; font-style:italic; font-size:18px; line-height:1.4; color:var(--parchment); }
-.quote-source{ font-size:11.5px; color:var(--lavender-dim); margin-top:7px; }
+.qgroup-info{ flex:1; min-width:0; }
+.qgroup-title{ font-family:'Cormorant Garamond',serif; font-weight:600; font-size:17px; line-height:1.2; }
+.qgroup-sub{ font-size:11.5px; color:var(--lavender-dim); margin-top:3px; }
+.qgroup .chev{ flex:none; color:var(--lavender-dim); transition: transform .2s; }
+.qgroup.open .chev{ transform: rotate(90deg); }
+.qgroup-body{ display:none; padding:2px 16px 16px 66px; }
+.qgroup.open .qgroup-body{ display:block; }
+.quote-line-item{ font-family:'Cormorant Garamond',serif; font-style:italic; font-size:17px; line-height:1.4; color:var(--parchment); padding:11px 0; border-bottom:1px solid var(--hairline); }
+.quote-line-item:last-of-type{ border-bottom:none; }
+.qgroup-open-book{ margin-top:10px; }
 
 .setup-box{ background: var(--bg-elevated); border:1px solid var(--hairline); border-radius: var(--radius); padding: 22px; max-width: 480px; }
 .setup-p{ font-size:13px; color: var(--lavender); line-height:1.5; margin: 0 0 16px; }
@@ -291,7 +298,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-10-27.2';
+const APP_VERSION = '2026-10-27.3';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -872,12 +879,14 @@ function render(){
       <button class="tab-btn ${activeTab==='letture'?'active':''}" data-tab="letture">Prossime letture</button>
       <button class="tab-btn ${activeTab==='extra'?'active':''}" data-tab="extra">Il tuo anno</button>
       <button class="tab-btn ${activeTab==='scaffale'?'active':''}" data-tab="scaffale">Scaffale</button>
+      <button class="tab-btn ${activeTab==='citazioni'?'active':''}" data-tab="citazioni">Citazioni</button>
     </div>
     <div class="tab-panel ${activeTab==='panoramica'?'active':''}" id="panel-panoramica"></div>
     <div class="tab-panel ${activeTab==='libreria'?'active':''}" id="panel-libreria"></div>
     <div class="tab-panel ${activeTab==='letture'?'active':''}" id="panel-letture"></div>
     <div class="tab-panel ${activeTab==='extra'?'active':''}" id="panel-extra"></div>
     <div class="tab-panel ${activeTab==='scaffale'?'active':''}" id="panel-scaffale"></div>
+    <div class="tab-panel ${activeTab==='citazioni'?'active':''}" id="panel-citazioni"></div>
   `;
 
   const si = document.getElementById('searchInput');
@@ -891,6 +900,7 @@ function render(){
   if(activeTab==='letture') renderLetture();
   if(activeTab==='extra') renderExtra();
   if(activeTab==='scaffale') renderScaffale();
+  if(activeTab==='citazioni') renderCitazioni();
 }
 
 /* ================= RENDER: PANORAMICA ================= */
@@ -1492,51 +1502,89 @@ function renderExtra(){
     </div></section>`;
   }
 
-  // One row per quote: every non-empty line of "Citazioni preferite" is its own quote
-  const quoteRows = [];
+  panel.innerHTML = html;
+  wireCommon(panel);
+  const yp = document.getElementById('yearPicker');
+  if(yp) yp.addEventListener('change', ()=>{ extraYear = parseInt(yp.value,10); renderExtra(); });
+}
+
+/* ================= RENDER: CITAZIONI (collapsible, grouped by book) ================= */
+let openQuoteBooks = new Set();
+function renderCitazioni(){
+  const panel = document.getElementById('panel-citazioni');
+
+  // one entry per book; every non-empty line of "Citazioni preferite" is its own quote
+  const groups = [];
   books.forEach(b=>{
     if(!b.reviewQuotes) return;
-    b.reviewQuotes.split('\n').map(l=>l.trim()).filter(Boolean).forEach(line=>{
-      const clean = line.replace(/^["“”«»]+\s*/, '').replace(/\s*["“”«»]+$/, '');
-      if(clean) quoteRows.push({ book:b, text:clean });
-    });
+    const quotes = b.reviewQuotes.split('\n').map(l=>l.trim()).filter(Boolean).map(line =>
+      line.replace(/^["“”«»]+\s*/, '').replace(/\s*["“”«»]+$/, '')
+    ).filter(Boolean);
+    if(quotes.length) groups.push({ book:b, quotes });
   });
-  quoteRows.sort((a,b)=> a.book.author.localeCompare(b.book.author) || a.book.saga.localeCompare(b.book.saga) || a.book.order-b.book.order);
+  groups.sort((a,b)=> a.book.author.localeCompare(b.book.author) || a.book.saga.localeCompare(b.book.saga) || a.book.order-b.book.order);
 
-  html += `<section class="block"><div class="block-head"><h2>Citazioni</h2><span class="sub">${quoteRows.length} ${quoteRows.length===1?'citazione salvata':'citazioni salvate'}</span></div>`;
-  if(quoteRows.length===0){
-    html += `<div class="empty-note">Non hai ancora salvato citazioni. Apri un libro letto e scrivine una nella sezione "Citazioni preferite" (una per riga).</div>`;
-  } else {
-    html += `<div class="quote-list">`;
-    quoteRows.forEach(q=>{
-      const b = q.book;
-      const gs = genreStyle(b.genre);
-      const cover = b.coverUrl || customCoverCache[b.customCoverId];
-      html += `<div class="quote-row" data-open="${b.id}">
-        <div class="quote-cover" data-qcover="${b.id}" style="background:linear-gradient(155deg, ${gs.c1}, ${gs.c2});">${cover?`<img src="${cover}" loading="lazy">`:''}</div>
-        <div class="quote-body">
-          <div class="quote-line">“${escapeHtml(q.text)}”</div>
-          <div class="quote-source">${escapeHtml(b.title)} · ${escapeHtml(b.author)}</div>
-        </div>
-      </div>`;
-    });
-    html += `</div>`;
+  const total = groups.reduce((s,g)=>s+g.quotes.length, 0);
+  let html = `<section class="block"><div class="block-head"><h2>Citazioni</h2><span class="sub">${total} ${total===1?'citazione':'citazioni'} in ${groups.length} ${groups.length===1?'libro':'libri'}</span></div>`;
+
+  if(groups.length===0){
+    html += `<div class="empty-note">Non hai ancora salvato citazioni. Apri un libro letto e scrivine una nella sezione "Citazioni preferite" (una per riga).</div></section>`;
+    panel.innerHTML = html;
+    return;
   }
-  html += `</section>`;
+
+  html += `<div class="quote-toolbar"><button class="chip" id="btnQuotesOpenAll" type="button">Apri tutti</button><button class="chip" id="btnQuotesCloseAll" type="button">Chiudi tutti</button></div>`;
+  html += `<div class="quote-accordion">`;
+  groups.forEach(g=>{
+    const b = g.book;
+    const gs = genreStyle(b.genre);
+    const cover = b.coverUrl || customCoverCache[b.customCoverId];
+    const isOpen = openQuoteBooks.has(b.id);
+    html += `<div class="qgroup ${isOpen?'open':''}" data-qgroup="${b.id}">
+      <div class="qgroup-head" data-qtoggle="${b.id}">
+        <div class="quote-cover" data-qcover="${b.id}" style="background:linear-gradient(155deg, ${gs.c1}, ${gs.c2});">${cover?`<img src="${cover}" loading="lazy">`:''}</div>
+        <div class="qgroup-info">
+          <div class="qgroup-title">${escapeHtml(b.title)}</div>
+          <div class="qgroup-sub">${escapeHtml(b.author)} · ${g.quotes.length} ${g.quotes.length===1?'citazione':'citazioni'}</div>
+        </div>
+        <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+      <div class="qgroup-body">
+        ${g.quotes.map(q=>`<div class="quote-line-item">“${escapeHtml(q)}”</div>`).join('')}
+        <button class="btn-mark qgroup-open-book" data-open="${b.id}" type="button">Apri libro</button>
+      </div>
+    </div>`;
+  });
+  html += `</div></section>`;
 
   panel.innerHTML = html;
   wireCommon(panel);
-  // covers uploaded by hand live in a separate store: load the missing ones and fill them in
-  const pendingCovers = new Set();
-  quoteRows.forEach(q=>{ if(!q.book.coverUrl && q.book.customCoverId && !customCoverCache[q.book.customCoverId]) pendingCovers.add(q.book); });
-  pendingCovers.forEach(b=>{
-    fetchCustomCover(b.customCoverId).then(data=>{
-      if(!data) return;
-      document.querySelectorAll(`[data-qcover="${b.id}"]`).forEach(el=>{ el.innerHTML = `<img src="${data}" loading="lazy">`; });
-    });
+
+  panel.querySelectorAll('[data-qtoggle]').forEach(el=> el.addEventListener('click', ()=>{
+    const id = el.dataset.qtoggle;
+    const group = panel.querySelector(`[data-qgroup="${id}"]`);
+    if(openQuoteBooks.has(id)){ openQuoteBooks.delete(id); group.classList.remove('open'); }
+    else { openQuoteBooks.add(id); group.classList.add('open'); }
+  }));
+  document.getElementById('btnQuotesOpenAll').addEventListener('click', ()=>{
+    groups.forEach(g=> openQuoteBooks.add(g.book.id));
+    panel.querySelectorAll('.qgroup').forEach(el=>el.classList.add('open'));
   });
-  const yp = document.getElementById('yearPicker');
-  if(yp) yp.addEventListener('change', ()=>{ extraYear = parseInt(yp.value,10); renderExtra(); });
+  document.getElementById('btnQuotesCloseAll').addEventListener('click', ()=>{
+    openQuoteBooks.clear();
+    panel.querySelectorAll('.qgroup').forEach(el=>el.classList.remove('open'));
+  });
+
+  // covers uploaded by hand live in a separate store: load the missing ones and fill them in
+  groups.forEach(g=>{
+    const b = g.book;
+    if(!b.coverUrl && b.customCoverId && !customCoverCache[b.customCoverId]){
+      fetchCustomCover(b.customCoverId).then(data=>{
+        if(!data) return;
+        document.querySelectorAll(`[data-qcover="${b.id}"]`).forEach(el=>{ el.innerHTML = `<img src="${data}" loading="lazy">`; });
+      });
+    }
+  });
 }
 
 /* ================= "COSA LEGGO STASERA?" ================= */
