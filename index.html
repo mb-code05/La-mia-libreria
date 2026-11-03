@@ -292,8 +292,11 @@ section.block{ margin-bottom: 34px; }
 .au-list{ display:flex; flex-direction:column; gap:6px; }
 .au-row{ display:flex; align-items:center; gap:10px; background: var(--bg-card); border:1px solid var(--hairline); border-radius:8px; padding:8px 10px; }
 .au-row.done .au-title span{ text-decoration:line-through; opacity:.6; }
-.au-row input[type=checkbox]{ width:18px; height:18px; accent-color: var(--gold); flex:none; }
-.au-title{ flex:1; min-width:0; display:flex; flex-direction:column; font-size:14px; color:var(--parchment); }
+.au-check{ -webkit-appearance:none; appearance:none; width:24px; height:24px; flex:none; border:2px solid var(--lavender); border-radius:6px; background:transparent; cursor:pointer; position:relative; margin:0; }
+.au-check:checked{ background: var(--gold); border-color: var(--gold); }
+.au-check:checked::after{ content:''; position:absolute; left:6px; top:1px; width:7px; height:13px; border:solid var(--bg); border-width:0 3px 3px 0; transform:rotate(45deg); }
+.au-check:disabled{ cursor:default; opacity:.85; }
+.au-title{ flex:1; min-width:0; display:flex; flex-direction:column; font-size:15px; color:var(--parchment); }
 .au-title i{ font-size:11.5px; color:var(--lavender); }
 .au-chip{ font-size:10.5px; font-weight:800; color:var(--emerald); background:var(--emerald-soft); padding:3px 8px; border-radius:5px; white-space:nowrap; }
 .au-del{ background:none; border:none; color:var(--lavender); cursor:pointer; font-size:13px; opacity:.6; }
@@ -373,7 +376,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.16';
+const APP_VERSION = '2026-11-03.18';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1991,18 +1994,12 @@ function findLibraryBook(card, it){
 }
 function authorItemDone(card, it){
   const lb = findLibraryBook(card, it);
-  return lb ? lb.status==='read' : !!it.done;
+  return !!it.done || (!!lb && lb.status==='read');
 }
 function authorProgress(card){
   const total = card.items.length;
   const done = card.items.filter(it=>authorItemDone(card,it)).length;
   return { done, total };
-}
-function guessAuthorGenre(name){
-  const counts = {};
-  books.filter(b=>normStr(b.author)===normStr(name)).forEach(b=> counts[b.genre]=(counts[b.genre]||0)+1);
-  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-  return top ? top[0] : 'Fantasy';
 }
 function renderAutori(){
   const panel = document.getElementById('panel-autori');
@@ -2028,7 +2025,7 @@ function renderAutori(){
   document.getElementById('btnNewAuthor').addEventListener('click', async ()=>{
     const name = (prompt('Nome dell\'autrice/autore:')||'').trim();
     if(!name) return;
-    const card = { id:newAuthorListId(), name, genre:guessAuthorGenre(name), items:[] };
+    const card = { id:newAuthorListId(), name, items:[] };
     authorLists.push(card); await saveData(); renderAutori(); openAuthorModal(card.id);
   });
   panel.querySelectorAll('[data-author]').forEach(el=> el.addEventListener('click', ()=> openAuthorModal(el.dataset.author)));
@@ -2037,7 +2034,6 @@ function openAuthorModal(cardId){
   const card = authorLists.find(c=>c.id===cardId);
   if(!card) return;
   const modal = document.getElementById('modalInner');
-  const genres = [...new Set([...Object.keys(GENRES).filter(g=>g!=='Altro'), ...allGenres()])];
   const pr = authorProgress(card);
   let rows = '';
   card.items.forEach(it=>{
@@ -2047,8 +2043,8 @@ function openAuthorModal(cardId){
       ? `<span class="au-chip">in libreria · ${lb.status==='read'?'letto':lb.status==='reading'?'in lettura':'da leggere'}</span>`
       : `<button class="btn-mark" data-auadd="${it.id}" type="button">+ Libreria</button>`;
     rows += `<div class="au-row ${done?'done':''}">
-      <input type="checkbox" data-audone="${it.id}" ${done?'checked':''} ${lb?'disabled':''}>
-      <div class="au-title"><span>${escapeHtml(it.title)}</span>${it.saga?`<i>${escapeHtml(it.saga)}</i>`:''}</div>
+      <input type="checkbox" class="au-check" data-audone="${it.id}" ${done?'checked':''} ${(lb&&lb.status==='read')?'disabled':''}>
+      <div class="au-title"><span>${escapeHtml(it.title)}</span></div>
       ${right}
       <button class="au-del" data-audel="${it.id}" title="Rimuovi dalla lista">✕</button>
     </div>`;
@@ -2057,11 +2053,9 @@ function openAuthorModal(cardId){
     <h3>${escapeHtml(card.name)}</h3>
     <div class="modal-sub"><b>${pr.done}</b> / ${pr.total} letti · i libri della lista non devono essere per forza in libreria</div>
     <div class="au-list">${rows || '<div class="empty-note">Lista vuota: aggiungi i libri qui sotto.</div>'}</div>
-    <div class="field" style="margin-top:14px;"><label>Aggiungi libri (uno per riga — "Titolo - Saga" se vuoi indicare la saga)</label>
-      <textarea id="auNew" rows="3" placeholder="Fourth Wing - Empyrean&#10;Iron Flame - Empyrean"></textarea>
+    <div class="field" style="margin-top:14px;"><label>Aggiungi titoli (uno per riga)</label>
+      <textarea id="auNew" rows="3" placeholder="Fourth Wing&#10;Iron Flame"></textarea>
       <button class="btn-mark" id="auAddBtn" type="button" style="margin-top:8px;">Aggiungi alla lista</button></div>
-    <div class="field"><label>Genere quando li aggiungo alla libreria</label>
-      <select id="auGenre">${genres.map(g=>`<option ${g===card.genre?'selected':''}>${escapeHtml(g)}</option>`).join('')}</select></div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="auDelete" type="button">Elimina scheda</button>
       <button class="btn btn-ghost" id="auRename" type="button">Rinomina</button>
@@ -2075,14 +2069,12 @@ function openAuthorModal(cardId){
     const lines = $('auNew').value.split('\n').map(l=>l.trim()).filter(Boolean);
     if(!lines.length) return;
     lines.forEach(line=>{
-      const [t, ...rest] = line.split(/\s+-\s+/);
-      const title = t.trim(); if(!title) return;
+      const title = line; if(!title) return;
       if(card.items.some(it=>normStr(it.title)===normStr(title))) return; // no duplicates
-      card.items.push({ id:newAuthorListId(), title, saga: rest.join(' - ').trim(), done:false });
+      card.items.push({ id:newAuthorListId(), title, done:false });
     });
     await saveData(); refresh();
   });
-  $('auGenre').addEventListener('change', async ()=>{ card.genre = $('auGenre').value; await saveData(); });
   $('auRename').addEventListener('click', async ()=>{
     const name = (prompt('Nuovo nome:', card.name)||'').trim();
     if(!name) return; card.name = name; await saveData(); refresh();
@@ -2097,11 +2089,9 @@ function openAuthorModal(cardId){
   modal.querySelectorAll('[data-audel]').forEach(el=> el.addEventListener('click', async ()=>{
     card.items = card.items.filter(x=>x.id!==el.dataset.audel); await saveData(); refresh();
   }));
-  modal.querySelectorAll('[data-auadd]').forEach(el=> el.addEventListener('click', async ()=>{
+  modal.querySelectorAll('[data-auadd]').forEach(el=> el.addEventListener('click', ()=>{
     const it = card.items.find(x=>x.id===el.dataset.auadd); if(!it) return;
-    const b = mk(card.name, it.saga || 'Standalone', it.title, 'toread', card.genre || 'Fantasy');
-    b.order = books.filter(x=>normStr(x.author)===normStr(card.name) && normStr(x.saga)===normStr(b.saga)).length + 1;
-    books.push(b); await saveData(); refresh();
+    openAddModal({ title: it.title, author: card.name }); // full "add book" form, as for any normal book
   }));
   document.getElementById('modalOverlay').classList.add('open');
 }
@@ -2281,14 +2271,14 @@ Fatum | Azura Helianthius"></textarea>
   });
   document.getElementById('modalOverlay').classList.add('open');
 }
-function openAddModal(){
+function openAddModal(prefill){
   const modal = document.getElementById('modalInner');
   const genres = [...new Set([...Object.keys(GENRES).filter(g=>g!=='Altro'), ...allGenres()])];
   modal.innerHTML = `
     <h3>Aggiungi un libro</h3>
     <div class="modal-sub">Inserisci i dettagli — potrai completare la recensione più avanti</div>
-    <div class="field"><label>Titolo</label><input type="text" id="nTitle" placeholder="es. Fourth Wing"></div>
-    <div class="field"><label>Autore</label><input type="text" id="nAuthor" placeholder="es. Rebecca Yarros"></div>
+    <div class="field"><label>Titolo</label><input type="text" id="nTitle" placeholder="es. Fourth Wing" value="${escapeHtml(prefill?.title||'')}"></div>
+    <div class="field"><label>Autore</label><input type="text" id="nAuthor" placeholder="es. Rebecca Yarros" value="${escapeHtml(prefill?.author||'')}"></div>
     <div class="field"><label>Saga (lascia vuoto se standalone)</label><input type="text" id="nSaga" placeholder="es. Empyrean"></div>
     <div class="field"><label>Genere</label>
       <div class="genre-select-row" id="nGenreRow">
@@ -2304,13 +2294,13 @@ function openAddModal(){
     </div>
     <div class="field"><label>Data di uscita (solo se non è ancora uscito)</label><input type="date" id="nDate"></div>
     <div class="modal-actions">
-      <button class="btn btn-ghost" id="btnGoBulk" type="button">Aggiungi più libri insieme →</button>
+      ${prefill?'':'<button class="btn btn-ghost" id="btnGoBulk" type="button">Aggiungi più libri insieme →</button>'}
       <div style="flex:1"></div>
       <button class="btn btn-ghost" id="btnCancelAdd">Annulla</button>
       <button class="btn btn-primary" id="btnSaveAdd">Salva</button>
     </div>
   `;
-  document.getElementById('btnGoBulk').addEventListener('click', openBulkAddModal);
+  const goBulk = document.getElementById('btnGoBulk'); if(goBulk) goBulk.addEventListener('click', openBulkAddModal);
   let nGenre = genres[0], nStatus = 'toread';
   modal.querySelectorAll('[data-ngenre]').forEach(el=> el.addEventListener('click', ()=>{
     nGenre = el.dataset.ngenre; modal.querySelectorAll('[data-ngenre]').forEach(x=>x.classList.remove('on')); el.classList.add('on');
@@ -2333,12 +2323,12 @@ function openAddModal(){
     setSaveStatus('saving');
     await saveData();
     closeModal();
-    activeTab='libreria'; render();
+    activeTab = prefill ? 'autori' : 'libreria'; render();
     fetchCoverFor(nb).then(async ()=>{ patchCoverInDom(nb); setSaveStatus('saving'); await saveData(); });
   });
   document.getElementById('modalOverlay').classList.add('open');
 }
-document.getElementById('fabAdd').addEventListener('click', openAddModal);
+document.getElementById('fabAdd').addEventListener('click', ()=> openAddModal());
 
 /* ================= INIT ================= */
 async function boot(){
