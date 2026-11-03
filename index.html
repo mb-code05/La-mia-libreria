@@ -13,7 +13,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Karla:wght@400;500;600;700;800&family=Bebas+Neue&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Josefin+Sans:wght@600;700&family=Abril+Fatface&family=Oswald:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Karla:wght@400;500;600;700;800&display=swap');
 
 :root{
   --bg: #17101f;
@@ -212,33 +212,34 @@ section.block{ margin-bottom: 34px; }
 
 .shelf-container{
   display:flex; flex-wrap:wrap; align-items:flex-end; align-content:flex-start;
-  gap:0; row-gap:32px; padding: 20px 16px 8px;
+  gap:2px; row-gap:30px; padding: 18px 14px 6px;
   background:
     repeating-linear-gradient(to bottom,
-      transparent 0px, transparent 254px,
-      #6b4a2b 254px, #4a3520 260px,
-      #2a1d12 260px, #1d140c 268px,
-      rgba(0,0,0,.35) 268px, transparent 276px,
-      transparent 276px, transparent 286px),
-    linear-gradient(180deg, #120c18, #1a1220);
-  background-position: 0 20px, 0 0; background-repeat: repeat-y, no-repeat;
+      transparent 0px, transparent 172px,
+      #2a1d12 172px, #4a3520 178px,
+      #1d140c 178px, #1d140c 182px,
+      transparent 182px, transparent 202px);
   border-radius: 8px;
   border: 1px solid var(--hairline);
 }
-.spine-slot{ height:254px; display:flex; align-items:flex-end; flex:none; }
 .spine{
-  border-radius: 2px 2px 1px 1px; cursor:pointer; position:relative; flex:none;
-  box-shadow: inset 1px 0 0 rgba(255,255,255,.14), inset -2px 0 0 rgba(0,0,0,.28);
-  display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
-  padding:14px 0 12px; gap:10px; transition: transform .15s, box-shadow .15s; overflow:hidden;
+  height:172px; border-radius: 3px 3px 2px 2px; cursor:pointer; position:relative; flex:none;
+  box-shadow: 1px 0 0 rgba(255,255,255,0.08) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 3px 6px rgba(0,0,0,0.35);
+  display:flex; align-items:center; justify-content:center; transition: transform .15s, box-shadow .15s;
+  overflow:hidden;
 }
-/* hardcover gloss + rounded edge */
-.spine::after{ content:''; position:absolute; inset:0; pointer-events:none; z-index:4;
-  background: linear-gradient(90deg, rgba(255,255,255,0.20) 0%, rgba(255,255,255,0.04) 14%, rgba(255,255,255,0) 40%, rgba(0,0,0,0.0) 72%, rgba(0,0,0,0.26) 100%); }
-.spine:hover{ transform: translateY(-8px) rotate(0deg) !important; box-shadow: 0 12px 18px rgba(0,0,0,0.5); z-index:5; }
-.spine-title, .spine-author{ position:relative; z-index:2; writing-mode: vertical-rl; text-orientation: mixed; font-family:'Playfair Display',Georgia,serif; }
-.spine-title{ flex:1; min-height:0; overflow:hidden; font-size:13px; font-weight:700; line-height:1.2; letter-spacing:.02em; text-align:start; }
-.spine-author{ flex:none; font-size:10.5px; font-weight:400; font-style:italic; letter-spacing:.04em; white-space:nowrap; overflow:hidden; max-height:80px; opacity:.92; }
+.spine:hover{ transform: translateY(-6px) rotate(0deg) !important; box-shadow: 1px 0 0 rgba(255,255,255,0.1) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 10px 16px rgba(0,0,0,0.45); z-index:2; }
+.spine-band{ position:absolute; z-index:1; left:2px; right:2px; height:4px; background: rgba(255,255,255,0.18); border-radius:2px; }
+.spine-band.top{ top:10px; }
+.spine-band.bottom{ bottom:10px; }
+.spine-scrim{ position:absolute; z-index:1; inset:0; background: linear-gradient(180deg, rgba(10,6,15,0.35), rgba(10,6,15,0.55) 50%, rgba(10,6,15,0.7)); }
+.spine-title{
+  position:relative; z-index:2;
+  writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+  font-family:'Cormorant Garamond',serif; font-weight:700; font-size:11.5px; color: rgba(242,232,213,0.95);
+  max-height:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:.01em;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+}
 
 .challenge-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align:center; transition: border-color .2s; }
 .challenge-card.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
@@ -303,7 +304,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.3';
+const APP_VERSION = '2026-11-03.4';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1552,59 +1553,30 @@ function renderScaffale(){
 function spineHtml(b){
   const gs = genreStyle(b.genre);
   const h = strHash(b.id);
-  const width = 50 + (h % 9);                  // 50–58px
-  const height = 236 + ((h>>>3) % 13);         // 236–248px
-  const tilt = (h % 13===0) ? (h%2===0?-2:2) : 0;
+  const width = 30 + (h % 22); // 30–52px, gives visual variety like real spines
+  const tilt = (h % 5===0) ? (h%2===0?-1.5:1.5) : 0; // occasional slight tilt for realism
   const cached = b.coverUrl || customCoverCache[b.customCoverId];
-  const title = (b.title||'').trim();
-  const author = (b.author||'').trim();
-  const loadingAttr = (!cached && b.customCoverId) ? ' data-spine-pending="1"' : '';
-  const html = `<div class="spine-slot"><div class="spine" data-open="${b.id}"${loadingAttr} title="${escapeHtml(title)} — ${escapeHtml(author)}"
-      style="width:${width}px; height:${height}px; background:${gs.c1}; color:rgba(250,244,230,.96); transform: rotate(${tilt}deg);">
-      <div class="spine-title" style="max-width:${width-10}px;">${escapeHtml(title)}</div>
-      <div class="spine-author">${escapeHtml(author)}</div>
-    </div></div>`;
-  if(cached) spineTint(b.id, cached);
-  else if(b.customCoverId){
+  const hasCover = !!cached;
+  const bg = hasCover ? `background-image:url('${cached}'); background-size:cover; background-position:center;` : `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
+  const loadingAttr = (!hasCover && b.customCoverId) ? ' data-spine-pending="1"' : '';
+  const html = `<div class="spine${hasCover?' has-img':''}" data-open="${b.id}"${loadingAttr} title="${escapeHtml(b.title)}"
+      style="width:${width}px; ${bg} transform: rotate(${tilt}deg);">
+    ${hasCover ? '' : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
+  </div>`;
+  if(!hasCover && b.customCoverId){
     fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchSpineCover(b.id, data); });
   }
   return html;
 }
-const spineColorCache = {};
-function applySpineColor(bookId, rgb){
-  const lum = (0.299*rgb[0] + 0.587*rgb[1] + 0.114*rgb[2])/255;
-  const fg = lum>0.58 ? 'rgba(28,20,14,0.95)' : 'rgba(252,246,232,0.97)';
+function patchSpineCover(bookId, dataUrl){
   document.querySelectorAll(`.spine[data-open="${bookId}"]`).forEach(el=>{
-    el.style.background = `rgb(${rgb.join(',')})`;
-    el.style.color = fg;
+    el.style.backgroundImage = `url('${dataUrl}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.classList.add('has-img');
+    el.querySelectorAll('.spine-band, .spine-title, .spine-scrim').forEach(x=>x.remove());
   });
 }
-function spineTint(bookId, url){
-  // main tone of the cover as the spine background; falls back silently to the genre colour
-  if(spineColorCache[url]){ applySpineColor(bookId, spineColorCache[url]); return; }
-  try{
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = ()=>{
-      try{
-        const c = document.createElement('canvas'); c.width = 16; c.height = 16;
-        const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, 16, 16);
-        const d = ctx.getImageData(0,0,16,16).data;
-        let r=0,g=0,b=0,n=0;
-        for(let i=0;i<d.length;i+=4){
-          const mx=Math.max(d[i],d[i+1],d[i+2]), mn=Math.min(d[i],d[i+1],d[i+2]);
-          const w = 0.3 + (mx-mn)/32; // favour the colourful pixels = the dominant tone
-          r+=d[i]*w; g+=d[i+1]*w; b+=d[i+2]*w; n+=w;
-        }
-        const rgb = [r/n, g/n, b/n].map(v=>Math.round(v));
-        spineColorCache[url] = rgb;
-        applySpineColor(bookId, rgb);
-      }catch(e){}
-    };
-    img.src = url;
-  }catch(e){}
-}
-function patchSpineCover(bookId, dataUrl){ spineTint(bookId, dataUrl); }
 
 /* ================= RENDER: EXTRA (yearly stats + quote wall) ================= */
 let extraYear = new Date().getFullYear();
