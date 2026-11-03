@@ -229,6 +229,9 @@ section.block{ margin-bottom: 34px; }
   overflow:hidden;
 }
 .spine:hover{ transform: translateY(-6px) rotate(0deg) !important; box-shadow: 1px 0 0 rgba(255,255,255,0.1) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 10px 16px rgba(0,0,0,0.45); z-index:2; }
+/* the cover, turned sideways so its title reads along the spine; the middle band of the cover shows */
+.spine-img{ position:absolute; left:50%; top:50%; width:172px; height:258px; margin:-129px 0 0 -86px; transform: translateX(-20px) rotate(90deg); background-size:cover; background-position:center; }
+.spine.has-img::after{ content:''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0) 30%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.22)); }
 .spine-band{ position:absolute; z-index:1; left:2px; right:2px; height:4px; background: rgba(255,255,255,0.18); border-radius:2px; }
 .spine-band.top{ top:10px; }
 .spine-band.bottom{ bottom:10px; }
@@ -304,7 +307,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.4';
+const APP_VERSION = '2026-11-03.5';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1557,11 +1560,11 @@ function spineHtml(b){
   const tilt = (h % 5===0) ? (h%2===0?-1.5:1.5) : 0; // occasional slight tilt for realism
   const cached = b.coverUrl || customCoverCache[b.customCoverId];
   const hasCover = !!cached;
-  const bg = hasCover ? `background-image:url('${cached}'); background-size:cover; background-position:center;` : `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
+  const bg = `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
   const loadingAttr = (!hasCover && b.customCoverId) ? ' data-spine-pending="1"' : '';
   const html = `<div class="spine${hasCover?' has-img':''}" data-open="${b.id}"${loadingAttr} title="${escapeHtml(b.title)}"
       style="width:${width}px; ${bg} transform: rotate(${tilt}deg);">
-    ${hasCover ? '' : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
+    ${hasCover ? `<div class="spine-img" style="background-image:url('${cached}')"></div>` : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
   </div>`;
   if(!hasCover && b.customCoverId){
     fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchSpineCover(b.id, data); });
@@ -1570,11 +1573,12 @@ function spineHtml(b){
 }
 function patchSpineCover(bookId, dataUrl){
   document.querySelectorAll(`.spine[data-open="${bookId}"]`).forEach(el=>{
-    el.style.backgroundImage = `url('${dataUrl}')`;
-    el.style.backgroundSize = 'cover';
-    el.style.backgroundPosition = 'center';
-    el.classList.add('has-img');
     el.querySelectorAll('.spine-band, .spine-title, .spine-scrim').forEach(x=>x.remove());
+    if(!el.querySelector('.spine-img')){
+      const d = document.createElement('div'); d.className = 'spine-img'; d.style.backgroundImage = `url('${dataUrl}')`;
+      el.appendChild(d);
+    }
+    el.classList.add('has-img');
   });
 }
 
