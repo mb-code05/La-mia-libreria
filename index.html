@@ -229,9 +229,6 @@ section.block{ margin-bottom: 34px; }
   overflow:hidden;
 }
 .spine:hover{ transform: translateY(-6px) rotate(0deg) !important; box-shadow: 1px 0 0 rgba(255,255,255,0.1) inset, -1px 0 0 rgba(0,0,0,0.25) inset, 0 10px 16px rgba(0,0,0,0.45); z-index:2; }
-/* the cover, turned sideways so its title reads along the spine; the middle band of the cover shows */
-.spine-img{ position:absolute; left:50%; top:50%; width:148px; height:222px; margin:-111px 0 0 -74px; transform: translateX(-20px) rotate(90deg); background-size:cover; background-position:center; }
-.spine.has-img::after{ content:''; position:absolute; inset:0; pointer-events:none; background: linear-gradient(90deg, rgba(255,255,255,0.14), rgba(255,255,255,0) 30%, rgba(0,0,0,0) 70%, rgba(0,0,0,0.22)); }
 .spine-band{ position:absolute; z-index:1; left:2px; right:2px; height:4px; background: rgba(255,255,255,0.18); border-radius:2px; }
 .spine-band.top{ top:10px; }
 .spine-band.bottom{ bottom:10px; }
@@ -307,7 +304,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.6';
+const APP_VERSION = '2026-11-03.7';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1556,54 +1553,29 @@ function renderScaffale(){
 function spineHtml(b){
   const gs = genreStyle(b.genre);
   const h = strHash(b.id);
-  const width = 44 + (h % 15); // 44–58px: wide enough for the title of the cover
+  const width = 30 + (h % 22); // 30–52px, gives visual variety like real spines
   const tilt = (h % 5===0) ? (h%2===0?-1.5:1.5) : 0; // occasional slight tilt for realism
   const cached = b.coverUrl || customCoverCache[b.customCoverId];
   const hasCover = !!cached;
-  const bg = `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
+  const bg = hasCover ? `background-image:url('${cached}'); background-size:cover; background-position:center;` : `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
   const loadingAttr = (!hasCover && b.customCoverId) ? ' data-spine-pending="1"' : '';
   const html = `<div class="spine${hasCover?' has-img':''}" data-open="${b.id}"${loadingAttr} title="${escapeHtml(b.title)}"
       style="width:${width}px; ${bg} transform: rotate(${tilt}deg);">
-    ${hasCover ? `<div class="spine-img" style="background-image:url('${cached}')"></div>` : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
+    ${hasCover ? '' : `<div class="spine-band top"></div><div class="spine-band bottom"></div><div class="spine-title">${escapeHtml(b.title)}</div>`}
   </div>`;
-  if(hasCover) spineTint(b.id, cached);
-  else if(b.customCoverId){
+  if(!hasCover && b.customCoverId){
     fetchCustomCover(b.customCoverId).then(data=>{ if(data) patchSpineCover(b.id, data); });
   }
   return html;
 }
-const spineColorCache = {};
-function spineTint(bookId, url){
-  // fill behind the cover = main tone of the cover, so the shrunk cover blends into the spine
-  const apply = rgb=> document.querySelectorAll(`.spine[data-open="${bookId}"]`).forEach(el=>{ el.style.background = `rgb(${rgb.join(',')})`; });
-  if(spineColorCache[url]){ apply(spineColorCache[url]); return; }
-  try{
-    const img = new Image(); img.crossOrigin = 'anonymous';
-    img.onload = ()=>{ try{
-      const c = document.createElement('canvas'); c.width = 16; c.height = 16;
-      const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0, 16, 16);
-      const d = ctx.getImageData(0,0,16,16).data;
-      let r=0,g=0,b=0,n=0;
-      for(let i=0;i<d.length;i+=4){
-        const w = 0.3 + (Math.max(d[i],d[i+1],d[i+2]) - Math.min(d[i],d[i+1],d[i+2]))/32;
-        r+=d[i]*w; g+=d[i+1]*w; b+=d[i+2]*w; n+=w;
-      }
-      const rgb = [r/n,g/n,b/n].map(v=>Math.round(v));
-      spineColorCache[url] = rgb; apply(rgb);
-    }catch(e){} };
-    img.src = url;
-  }catch(e){}
-}
 function patchSpineCover(bookId, dataUrl){
   document.querySelectorAll(`.spine[data-open="${bookId}"]`).forEach(el=>{
-    el.querySelectorAll('.spine-band, .spine-title, .spine-scrim').forEach(x=>x.remove());
-    if(!el.querySelector('.spine-img')){
-      const d = document.createElement('div'); d.className = 'spine-img'; d.style.backgroundImage = `url('${dataUrl}')`;
-      el.appendChild(d);
-    }
+    el.style.backgroundImage = `url('${dataUrl}')`;
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
     el.classList.add('has-img');
+    el.querySelectorAll('.spine-band, .spine-title, .spine-scrim').forEach(x=>x.remove());
   });
-  spineTint(bookId, dataUrl);
 }
 
 /* ================= RENDER: EXTRA (yearly stats + quote wall) ================= */
