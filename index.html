@@ -241,6 +241,20 @@ section.block{ margin-bottom: 34px; }
   text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
+.badge-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap:12px; }
+.badge-card{ background: var(--bg-card); border:1px solid var(--gold); border-radius: var(--radius); padding: 16px 12px; text-align:center; }
+.badge-medal{ width:54px; height:54px; margin:0 auto 8px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:26px; background: radial-gradient(circle at 30% 25%, #f0d28a, #c9a24e 60%, #8c6d2a); box-shadow: 0 0 0 3px var(--gold-soft), 0 3px 8px rgba(0,0,0,.4); }
+.badge-name{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:16px; color:var(--parchment); line-height:1.15; }
+.badge-detail{ font-size:11.5px; color:var(--lavender); margin-top:4px; }
+.badge-date{ font-size:10.5px; color:var(--gold); margin-top:6px; font-style:italic; }
+.badge-toast{ position:fixed; left:50%; top:18px; transform:translateX(-50%); z-index:200; width:min(420px, calc(100vw - 28px)); display:flex; gap:14px; align-items:center; cursor:pointer;
+  background: var(--bg-elevated); border:1px solid var(--gold); border-radius:14px; padding:16px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.55); animation: toastIn .45s ease; }
+@keyframes toastIn{ from{ opacity:0; transform:translate(-50%,-14px) scale(.96);} to{ opacity:1; transform:translate(-50%,0) scale(1);} }
+.bt-icon{ font-size:38px; }
+.bt-head{ font-size:11px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); }
+.bt-title{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:20px; color:var(--parchment); line-height:1.15; margin:2px 0; }
+.bt-msg{ font-size:13px; color:var(--parchment); }
+.bt-sub{ font-size:11px; color:var(--lavender); margin-top:4px; }
 .challenge-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
 .challenge-item{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
 .challenge-item.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
@@ -316,7 +330,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.8';
+const APP_VERSION = '2026-11-03.9';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -614,7 +628,7 @@ function openSettingsScreen(){
 }
 
 function exportBackup(){
-  const data = JSON.stringify({ books, plans, challenges, yearlyGoal, exportedAt: new Date().toISOString() }, null, 2);
+  const data = JSON.stringify({ books, plans, challenges, badges, yearlyGoal, exportedAt: new Date().toISOString() }, null, 2);
   const blob = new Blob([data], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -631,6 +645,7 @@ async function importBackupFile(file){
   books = incoming;
   plans = Array.isArray(parsed.plans) ? parsed.plans : [];
   challenges = Array.isArray(parsed.challenges) ? parsed.challenges : [];
+  badges = Array.isArray(parsed.badges) ? parsed.badges : [];
   if(!Array.isArray(parsed) && parsed.yearlyGoal != null) yearlyGoal = parsed.yearlyGoal;
   await migratePlans(); // makes sure a plan exists and every planned book points to one (also saves)
 }
@@ -790,6 +805,7 @@ function challengeProgress(c){
 function challengeTitle(c){
   if(c.title) return c.title;
   if(c.type==='plan'){ const p=getPlan(c.planId); return 'Finisci il piano' + (p?` "${p.name}"`:''); }
+  if(c.type==='manual') return `Obiettivo: ${c.target||'…'}`;
   return `Leggi ${c.target||'…'} libri`;
 }
 function challengeDeadline(c){
@@ -798,6 +814,43 @@ function challengeDeadline(c){
   if(d<0) return `scaduta il ${fmtDate(c.end)}`;
   if(d===0) return 'scade oggi';
   return `entro il ${fmtDate(c.end)} · ${d===1?'manca 1 giorno':`mancano ${d} giorni`}`;
+}
+const BADGE_ICONS = { plan:'📚', books:'📖', manual:'⭐' };
+const BADGE_MESSAGES = [
+  'Ce l\'hai fatta! Un\'altra pagina di storia tra i tuoi libri.',
+  'Obiettivo raggiunto! Te lo sei guadagnato, un capitolo alla volta.',
+  'Che lettrice! Questa challenge è ufficialmente tua.',
+  'Missione compiuta! Il tuo scaffale dei badge si arricchisce.',
+  'Brava! Ora puoi stare tranquilla… fino alla prossima challenge.',
+];
+function collectCompletedChallenges(){
+  const earned = [];
+  challenges = challenges.filter(c=>{
+    const pr = challengeProgress(c);
+    if(!pr.finished) return true;
+    let detail = '';
+    if(c.type==='plan'){ const p = getPlan(c.planId); detail = `Piano${p?` "${p.name}"`:''} completato · ${pr.total} libri`; }
+    else if(c.type==='books') detail = `${c.target} libri letti${c.end?` entro il ${fmtDate(c.end)}`:''}`;
+    else detail = `Obiettivo ${c.target} raggiunto`;
+    earned.push({ id:'bd-'+c.id, title: challengeTitle(c), type:c.type, detail, earnedAt: todayISO() });
+    return false;
+  });
+  if(earned.length) badges = badges.concat(earned);
+  return earned;
+}
+function celebrateBadges(earned){
+  document.querySelectorAll('.badge-toast').forEach(x=>x.remove());
+  const msg = BADGE_MESSAGES[Math.floor(Math.random()*BADGE_MESSAGES.length)];
+  const t = document.createElement('div');
+  t.className = 'badge-toast';
+  t.innerHTML = `<div class="bt-icon">🏆</div>
+    <div class="bt-body"><div class="bt-head">Challenge completata!</div>
+    <div class="bt-title">${earned.map(e=>escapeHtml(e.title)).join(' · ')}</div>
+    <div class="bt-msg">${msg}</div>
+    <div class="bt-sub">Il badge è nella sezione "I tuoi badge" in <b>Il tuo anno</b>.</div></div>`;
+  t.addEventListener('click', ()=> t.remove());
+  document.body.appendChild(t);
+  setTimeout(()=> t.remove(), 9000);
 }
 async function saveChallenge(c){
   const i = challenges.findIndex(x=>x.id===c.id);
@@ -875,6 +928,7 @@ async function migrateCoverSizes(){
 let books = [];
 let yearlyGoal = null;
 let plans = []; // [{id, name}] — the user's reading plans
+let badges = []; // [{id, title, type, detail, earnedAt}] — earned from completed challenges
 let challenges = []; // [{id, title, type:'books'|'plan'|'manual', target, start, end, planId, count}]
 let activePlanId = null;
 let activeTab = 'panoramica';
@@ -899,6 +953,7 @@ async function loadData(){
     yearlyGoal = snap.data().yearlyGoal ?? null;
     plans = snap.data().plans ?? [];
     challenges = snap.data().challenges ?? [];
+    badges = snap.data().badges ?? [];
     return;
   }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
@@ -931,11 +986,13 @@ function setSaveStatus(state){
   else if(state==='error'){ el.textContent = '⚠ Salvataggio non riuscito — riprova'; el.className='save-status error'; }
 }
 async function saveData(){
+  const earned = collectCompletedChallenges(); // finished challenges turn into badges before writing
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, yearlyGoal, plans, challenges, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, plans, challenges, badges, updatedAt: Date.now() });
     setSaveStatus('saved');
+    if(earned.length){ celebrateBadges(earned); if(activeTab==='extra') renderExtra(); }
   }catch(e){
     console.error('Errore salvataggio', e);
     setSaveStatus('error');
@@ -1705,6 +1762,21 @@ function renderExtra(){
         ${dl?`<div class="ch-deadline ${expired?'expired':''}">${dl}</div>`:''}
         ${pr.finished?'<div class="ch-deadline" style="color:var(--gold);">Challenge completata!</div>':''}
       </div>`;
+    });
+    html += `</div>`;
+  }
+  html += `</section>`;
+
+  html += `<section class="block"><div class="block-head"><h2>I tuoi badge</h2><span class="sub">${badges.length} ${badges.length===1?'conquistato':'conquistati'}</span></div>`;
+  if(badges.length===0){
+    html += `<div class="empty-note">Completa una challenge e il suo badge comparirà qui.</div>`;
+  } else {
+    html += `<div class="badge-grid">`;
+    badges.slice().reverse().forEach(bd=>{
+      html += `<div class="badge-card"><div class="badge-medal">${BADGE_ICONS[bd.type]||'🏅'}</div>
+        <div class="badge-name">${escapeHtml(bd.title)}</div>
+        <div class="badge-detail">${escapeHtml(bd.detail||'')}</div>
+        <div class="badge-date">${fmtDate(bd.earnedAt)||''}</div></div>`;
     });
     html += `</div>`;
   }
