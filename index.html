@@ -341,7 +341,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.11';
+const APP_VERSION = '2026-11-03.12';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1123,7 +1123,6 @@ function render(){
 }
 
 /* ================= RENDER: PANORAMICA ================= */
-let recGenre = 'all';
 function getDismissedRecs(){ try{ return new Set(JSON.parse(localStorage.getItem('rec-dismissed')||'[]')); }catch(e){ return new Set(); } }
 function setDismissedRecs(set){ try{ localStorage.setItem('rec-dismissed', JSON.stringify([...set])); }catch(e){} }
 function renderPanoramica(){
@@ -1152,16 +1151,11 @@ function renderPanoramica(){
   continues.forEach(c=> recAll.push({ kind:'continue', book:c.book, author:c.author, saga:c.saga, readCount:c.readCount, total:c.total }));
   starts.forEach(st=> recAll.push({ kind:'start', book:st.book, author:st.author, saga:st.saga, total:st.total, note:st.note }));
   const dismissed = getDismissedRecs();
-  const recGenres = [...new Set(recAll.map(r=>r.book.genre))];
-  if(recGenre!=='all' && !recGenres.includes(recGenre)) recGenre = 'all';
-  const visibleRecs = recAll.filter(r=> !dismissed.has(r.book.id) && (recGenre==='all' || r.book.genre===recGenre)).slice(0,14);
+  const visibleRecs = recAll.filter(r=> !dismissed.has(r.book.id)).slice(0,5);
   const hiddenCount = recAll.filter(r=> dismissed.has(r.book.id)).length;
 
   html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">${hiddenCount?`<span id="recReset" style="cursor:pointer;text-decoration:underline;">rimostra i ${hiddenCount} nascosti</span>`:'consigliato per te'}</span></div>`;
-  if(recGenres.length>1){
-    html += `<div class="plan-chips" style="margin-top:0;"><button class="chip${recGenre==='all'?' active':''}" data-recgenre="all">Tutti</button>${recGenres.map(g=>`<button class="chip${recGenre===g?' active':''}" data-recgenre="${escapeHtml(g)}">${escapeHtml(g)}</button>`).join('')}</div>`;
-  }
-  if(visibleRecs.length===0) html += `<div class="empty-note">${recAll.length?'Nessun consiglio con questo filtro.':'Nessun suggerimento — aggiungi qualche libro dalla libreria.'}</div>`;
+  if(visibleRecs.length===0) html += `<div class="empty-note">${recAll.length?'Hai scartato tutti i consigli.':'Nessun suggerimento — aggiungi qualche libro dalla libreria.'}</div>`;
   else {
     html += `<div class="rec-carousel">`;
     visibleRecs.forEach(r=>{
@@ -1213,7 +1207,6 @@ function renderPanoramica(){
   panel.innerHTML = html;
   wireCommon(panel);
   document.getElementById('btnDicePick').addEventListener('click', openDicePick);
-  panel.querySelectorAll('[data-recgenre]').forEach(el=> el.addEventListener('click', ()=>{ recGenre = el.dataset.recgenre; renderPanoramica(); }));
   panel.querySelectorAll('[data-recskip]').forEach(el=> el.addEventListener('click', ()=>{ const d = getDismissedRecs(); d.add(el.dataset.recskip); setDismissedRecs(d); renderPanoramica(); }));
   const rr = document.getElementById('recReset'); if(rr) rr.addEventListener('click', ()=>{ setDismissedRecs(new Set()); renderPanoramica(); });
   document.getElementById('goalEditLink').addEventListener('click', async ()=>{
