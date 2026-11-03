@@ -167,7 +167,7 @@ section.block{ margin-bottom: 34px; }
 .modal .modal-sub{ font-size:12.5px; color:var(--lavender); margin-bottom:18px; }
 .field{ margin-bottom: 13px; }
 .field label{ display:block; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--lavender); margin-bottom:5px; font-weight:700; }
-.field input[type=text], .field input[type=date], .field select, .field textarea{
+.field input[type=text], .field input[type=date], .field input[type=number], .field select, .field textarea{
   width:100%; background: var(--bg); border:1px solid var(--hairline); border-radius:7px; padding: 9px 11px;
   color: var(--parchment); font-family:'Karla'; font-size:14px; outline:none;
 }
@@ -241,6 +241,18 @@ section.block{ margin-bottom: 34px; }
   text-shadow: 0 1px 3px rgba(0,0,0,0.7);
 }
 
+.challenge-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
+.challenge-item{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
+.challenge-item.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+.ch-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.ch-title{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:19px; color:var(--parchment); line-height:1.15; }
+.ch-edit{ background:none; border:none; color:var(--lavender); font-size:16px; cursor:pointer; padding:0 2px; }
+.ch-edit:hover{ color:var(--gold); }
+.ch-foot{ display:flex; justify-content:space-between; align-items:center; font-size:12.5px; color:var(--lavender); }
+.ch-foot b{ color:var(--gold); font-family:'Cormorant Garamond',serif; font-size:16px; }
+.ch-count button{ background: var(--bg-elevated); border:1px solid var(--hairline); color:var(--parchment); width:28px; height:28px; border-radius:7px; font-size:16px; cursor:pointer; margin-left:4px; }
+.ch-deadline{ font-size:11.5px; color:var(--lavender); margin-top:6px; font-style:italic; }
+.ch-deadline.expired{ color:var(--rose); }
 .challenge-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; text-align:center; transition: border-color .2s; }
 .challenge-card.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
 .challenge-icon{ font-size:26px; margin-bottom:4px; }
@@ -304,7 +316,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.7';
+const APP_VERSION = '2026-11-03.8';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -602,7 +614,7 @@ function openSettingsScreen(){
 }
 
 function exportBackup(){
-  const data = JSON.stringify({ books, plans, yearlyGoal, exportedAt: new Date().toISOString() }, null, 2);
+  const data = JSON.stringify({ books, plans, challenges, yearlyGoal, exportedAt: new Date().toISOString() }, null, 2);
   const blob = new Blob([data], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -618,6 +630,7 @@ async function importBackupFile(file){
   if(!Array.isArray(incoming)) throw new Error('File non valido: non contiene una lista di libri.');
   books = incoming;
   plans = Array.isArray(parsed.plans) ? parsed.plans : [];
+  challenges = Array.isArray(parsed.challenges) ? parsed.challenges : [];
   if(!Array.isArray(parsed) && parsed.yearlyGoal != null) yearlyGoal = parsed.yearlyGoal;
   await migratePlans(); // makes sure a plan exists and every planned book points to one (also saves)
 }
@@ -754,17 +767,97 @@ async function migrateReviewFields(){
 
 /* ================= READING CHALLENGES ================= */
 function todayISO(){ return new Date().toISOString().slice(0,10); }
-function computeFlashReads(){
-  return books.filter(b=>{
-    if(!b.dateStarted || !b.dateFinished) return false;
-    const hours = (new Date(b.dateFinished) - new Date(b.dateStarted)) / 3600000;
-    return hours >= 0 && hours <= 48;
-  }).sort((a,b)=> new Date(b.dateFinished) - new Date(a.dateFinished));
+function newChallengeId(){ return 'ch-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+/* progress of one challenge → {done, total, finished, note} */
+function challengeProgress(c){
+  if(c.type==='plan'){
+    const list = getPlanBooks(c.planId);
+    const done = list.filter(b=>b.status==='read').length;
+    return { done, total:list.length, finished: list.length>0 && done===list.length };
+  }
+  if(c.type==='manual'){
+    const total = c.target||1, done = c.count||0;
+    return { done, total, finished: done>=total };
+  }
+  const total = c.target||1;
+  const done = books.filter(b=>{
+    if(b.status!=='read' || !b.dateFinished) return false;
+    const d = String(b.dateFinished).slice(0,10);
+    return (!c.start || d>=c.start) && (!c.end || d<=c.end);
+  }).length;
+  return { done, total, finished: done>=total };
 }
-function computeTbrProgress(){
-  const q = getAllPlannedBooks();
-  const done = q.filter(b=>b.status==='read').length;
-  return { done, total: q.length };
+function challengeTitle(c){
+  if(c.title) return c.title;
+  if(c.type==='plan'){ const p=getPlan(c.planId); return 'Finisci il piano' + (p?` "${p.name}"`:''); }
+  return `Leggi ${c.target||'…'} libri`;
+}
+function challengeDeadline(c){
+  if(!c.end) return '';
+  const d = daysUntil(c.end);
+  if(d<0) return `scaduta il ${fmtDate(c.end)}`;
+  if(d===0) return 'scade oggi';
+  return `entro il ${fmtDate(c.end)} · ${d===1?'manca 1 giorno':`mancano ${d} giorni`}`;
+}
+async function saveChallenge(c){
+  const i = challenges.findIndex(x=>x.id===c.id);
+  if(i>=0) challenges[i] = c; else challenges.push(c);
+  await saveData();
+}
+async function deleteChallenge(id){
+  challenges = challenges.filter(c=>c.id!==id);
+  await saveData();
+}
+function openChallengeModal(id){
+  const existing = id ? challenges.find(c=>c.id===id) : null;
+  const c = existing ? {...existing} : { id:newChallengeId(), title:'', type:'books', target:10, start:todayISO(), end:'', planId:(plans[0]||{}).id||'', count:0 };
+  const modal = document.getElementById('modalInner');
+  modal.innerHTML = `
+    <h3>${existing?'Modifica challenge':'Nuova challenge'}</h3>
+    <div class="modal-sub">Scegli tu cosa vuoi raggiungere.</div>
+    <div class="field"><label>Nome (facoltativo)</label><input type="text" id="chTitle" placeholder="es. TBR di novembre" value="${escapeHtml(c.title)}"></div>
+    <div class="field"><label>Tipo</label>
+      <select id="chType">
+        <option value="books" ${c.type==='books'?'selected':''}>Leggere N libri (entro una data)</option>
+        <option value="plan" ${c.type==='plan'?'selected':''}>Finire un piano di lettura</option>
+        <option value="manual" ${c.type==='manual'?'selected':''}>Obiettivo libero (conto io)</option>
+      </select></div>
+    <div class="field" id="chPlanRow"><label>Piano</label>
+      <select id="chPlan">${plans.length?plans.map(p=>`<option value="${p.id}" ${c.planId===p.id?'selected':''}>${escapeHtml(p.name)}</option>`).join(''):'<option value="">Nessun piano — creane uno in "Prossime letture"</option>'}</select></div>
+    <div class="field" id="chTargetRow"><label id="chTargetLabel">Quanti libri</label><input type="number" id="chTarget" min="1" value="${c.target||10}"></div>
+    <div class="field" id="chStartRow"><label>Conta i libri finiti a partire dal</label><input type="date" id="chStart" value="${c.start||''}"></div>
+    <div class="field"><label>Scadenza (facoltativa)</label><input type="date" id="chEnd" value="${c.end||''}"></div>
+    <div class="modal-actions">
+      ${existing?'<button class="btn btn-danger" id="chDelete" type="button">Elimina</button>':''}
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" id="chCancel" type="button">Annulla</button>
+      <button class="btn btn-primary" id="chSave" type="button">Salva</button>
+    </div>`;
+  const $ = x=>document.getElementById(x);
+  const sync = ()=>{
+    const t = $('chType').value;
+    $('chPlanRow').style.display = t==='plan' ? '' : 'none';
+    $('chTargetRow').style.display = t==='plan' ? 'none' : '';
+    $('chStartRow').style.display = t==='books' ? '' : 'none';
+    $('chTargetLabel').textContent = t==='manual' ? 'Obiettivo (numero da raggiungere)' : 'Quanti libri';
+  };
+  $('chType').addEventListener('change', sync); sync();
+  $('chCancel').addEventListener('click', closeModal);
+  if(existing) $('chDelete').addEventListener('click', async ()=>{
+    if(!confirm('Eliminare questa challenge?')) return;
+    await deleteChallenge(c.id); closeModal();
+  });
+  $('chSave').addEventListener('click', async ()=>{
+    c.title = $('chTitle').value.trim();
+    c.type = $('chType').value;
+    c.planId = $('chPlan').value;
+    c.target = Math.max(1, parseInt($('chTarget').value,10) || 1);
+    c.start = $('chStart').value;
+    c.end = $('chEnd').value;
+    if(c.type==='plan' && !c.planId){ alert('Scegli un piano.'); return; }
+    await saveChallenge(c); closeModal();
+  });
+  document.getElementById('modalOverlay').classList.add('open');
 }
 
 async function migrateCoverSizes(){
@@ -782,6 +875,7 @@ async function migrateCoverSizes(){
 let books = [];
 let yearlyGoal = null;
 let plans = []; // [{id, name}] — the user's reading plans
+let challenges = []; // [{id, title, type:'books'|'plan'|'manual', target, start, end, planId, count}]
 let activePlanId = null;
 let activeTab = 'panoramica';
 let searchTerm = '';
@@ -804,6 +898,7 @@ async function loadData(){
     books = snap.data().books;
     yearlyGoal = snap.data().yearlyGoal ?? null;
     plans = snap.data().plans ?? [];
+    challenges = snap.data().challenges ?? [];
     return;
   }
   // Only seed brand-new libraries — never overwrite an existing (even empty) document silently
@@ -839,7 +934,7 @@ async function saveData(){
   pendingWrites++;
   setSaveStatus('saving');
   try{
-    await docRef.set({ books, yearlyGoal, plans, updatedAt: Date.now() });
+    await docRef.set({ books, yearlyGoal, plans, challenges, updatedAt: Date.now() });
     setSaveStatus('saved');
   }catch(e){
     console.error('Errore salvataggio', e);
@@ -1588,24 +1683,32 @@ function renderExtra(){
 
   const yearBooks = readBooks.filter(b=>b.dateFinished && new Date(b.dateFinished).getFullYear()===extraYear);
 
-  const flashReads = computeFlashReads();
-  const tbrProgress = computeTbrProgress();
-  let html = `<section class="block"><div class="block-head"><h2>Le tue challenge</h2></div>
-    <div class="wrapped-grid">
-      <div class="challenge-card ${flashReads.length>0?'gold':''}">
-        <div class="challenge-icon">⚡</div>
-        <div class="challenge-title">Lettura lampo</div>
-        <div class="challenge-sub">${flashReads.length} libri finiti in 48 ore</div>
-        ${flashReads.length ? `<div class="challenge-record">ultimo: ${escapeHtml(flashReads[0].title)}</div>` : ''}
-      </div>
-      <div class="challenge-card ${tbrProgress.total>0 && tbrProgress.done===tbrProgress.total?'gold':''}">
-        <div class="challenge-icon">📚</div>
-        <div class="challenge-title">Finisci la TBR</div>
-        <div class="challenge-sub">${tbrProgress.done}/${tbrProgress.total} libri del piano letti</div>
-        <div class="goal-track" style="margin-top:8px;"><div class="goal-fill" style="width:${tbrProgress.total? (tbrProgress.done/tbrProgress.total*100):0}%;"></div></div>
-      </div>
-    </div>
-  </section>`;
+  let html = `<section class="block"><div class="block-head"><h2>Le tue challenge</h2><button class="btn-mark" id="btnNewChallenge" type="button">+ Nuova challenge</button></div>`;
+  if(challenges.length===0){
+    html += `<div class="empty-note">Nessuna challenge impostata. Creane una: "finire la TBR di novembre", "leggere 10 libri entro fine anno"…</div>`;
+  } else {
+    html += `<div class="challenge-list">`;
+    challenges.forEach(c=>{
+      const pr = challengeProgress(c);
+      const pct = pr.total ? Math.min(100, pr.done/pr.total*100) : 0;
+      const dl = challengeDeadline(c);
+      const expired = c.end && daysUntil(c.end)<0 && !pr.finished;
+      html += `<div class="challenge-item ${pr.finished?'gold':''}">
+        <div class="ch-head">
+          <div class="ch-title">${pr.finished?'🏆 ':''}${escapeHtml(challengeTitle(c))}</div>
+          <button class="ch-edit" data-chedit="${c.id}" title="Modifica">✎</button>
+        </div>
+        <div class="goal-track" style="margin:8px 0 6px;"><div class="goal-fill" style="width:${pct}%;"></div></div>
+        <div class="ch-foot"><span><b>${pr.done}</b> / ${pr.total}${c.type==='plan'?' libri del piano letti':c.type==='books'?' libri letti':''}</span>
+          ${c.type==='manual'?`<span class="ch-count"><button data-chminus="${c.id}">−</button><button data-chplus="${c.id}">+</button></span>`:''}
+        </div>
+        ${dl?`<div class="ch-deadline ${expired?'expired':''}">${dl}</div>`:''}
+        ${pr.finished?'<div class="ch-deadline" style="color:var(--gold);">Challenge completata!</div>':''}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  html += `</section>`;
 
   html += `<section class="block"><div class="block-head"><h2>Il tuo anno in libri</h2>
     <select id="yearPicker" style="background:var(--bg-elevated);border:1px solid var(--hairline);color:var(--parchment);border-radius:7px;padding:5px 9px;font-size:12px;">
@@ -1645,6 +1748,12 @@ function renderExtra(){
 
   panel.innerHTML = html;
   wireCommon(panel);
+  const bn = document.getElementById('btnNewChallenge');
+  if(bn) bn.addEventListener('click', ()=> openChallengeModal(null));
+  panel.querySelectorAll('[data-chedit]').forEach(el=> el.addEventListener('click', ()=> openChallengeModal(el.dataset.chedit)));
+  const bump = async (id, d)=>{ const c = challenges.find(x=>x.id===id); if(c){ c.count = Math.max(0,(c.count||0)+d); await saveData(); renderExtra(); } };
+  panel.querySelectorAll('[data-chplus]').forEach(el=> el.addEventListener('click', ()=> bump(el.dataset.chplus, 1)));
+  panel.querySelectorAll('[data-chminus]').forEach(el=> el.addEventListener('click', ()=> bump(el.dataset.chminus, -1)));
   const yp = document.getElementById('yearPicker');
   if(yp) yp.addEventListener('change', ()=>{ extraYear = parseInt(yp.value,10); renderExtra(); });
 }
