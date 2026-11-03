@@ -92,6 +92,15 @@ section.block{ margin-bottom: 34px; }
 
 /* ---- Recommendation cards (Prossime letture tab) ---- */
 .rec-grid{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap: 12px; }
+.rec-carousel{ display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x proximity; padding:4px 2px 12px; -webkit-overflow-scrolling:touch; }
+.rec-slide{ flex:none; width:200px; scroll-snap-align:start; background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding:12px; }
+.rec-slide h3{ font-family:'Cormorant Garamond',serif; font-size:18px; font-weight:600; margin:2px 0 3px; line-height:1.2; }
+.rec-slide .meta{ font-size:12px; color: var(--lavender); }
+.rec-slide .tag{ font-size:10px; letter-spacing:.08em; text-transform:uppercase; font-weight:800; margin:10px 0 4px; display:inline-block; padding:3px 8px; border-radius:5px; }
+.rec-cover{ width:100%; aspect-ratio:2/3; border-radius:6px; background-size:cover; background-position:center; cursor:pointer; box-shadow:0 3px 8px rgba(0,0,0,.4); }
+.rec-why{ font-size:12px; color: var(--gold); font-style:italic; margin-bottom:10px; min-height:30px; }
+.rec-actions{ display:flex; align-items:center; gap:8px; }
+.rec-skip{ background:none; border:none; color:var(--lavender); font-size:12px; cursor:pointer; text-decoration:underline; }
 .rec-card{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px 16px 14px; transition: transform .18s, box-shadow .18s; }
 .rec-card:hover{ transform: translateY(-2px); box-shadow: var(--shadow); }
 .rec-card .tag{ font-size:10px; letter-spacing:.1em; text-transform:uppercase; font-weight:800; margin-bottom:8px; display:inline-block; padding:3px 8px; border-radius:5px; }
@@ -332,7 +341,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.10';
+const APP_VERSION = '2026-11-03.11';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1114,6 +1123,9 @@ function render(){
 }
 
 /* ================= RENDER: PANORAMICA ================= */
+let recGenre = 'all';
+function getDismissedRecs(){ try{ return new Set(JSON.parse(localStorage.getItem('rec-dismissed')||'[]')); }catch(e){ return new Set(); } }
+function setDismissedRecs(set){ try{ localStorage.setItem('rec-dismissed', JSON.stringify([...set])); }catch(e){} }
 function renderPanoramica(){
   const panel = document.getElementById('panel-panoramica');
   const {continues, starts} = buildRecommendations();
@@ -1136,15 +1148,46 @@ function renderPanoramica(){
 
   html += `<section class="block"><button class="dice-btn" id="btnDicePick">🎲 Cosa leggo stasera?</button></section>`;
 
-  html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">consigliato per te</span></div><div class="rec-grid">`;
-  if(continues.length===0 && starts.length===0) html += `<div class="empty-note">Nessun suggerimento — aggiungi qualche libro dalla libreria.</div>`;
-  continues.slice(0,3).forEach(c=>{
-    html += `<div class="rec-card"><span class="tag continue">Continua la saga</span><h3>${escapeHtml(c.book.title)}</h3><div class="meta">${escapeHtml(c.author)} · <i>${escapeHtml(c.saga)}</i> — ${c.readCount}/${c.total} letti</div><button class="btn-mark" data-open="${c.book.id}">Apri libro</button></div>`;
-  });
-  starts.slice(0,3).forEach(s=>{
-    html += `<div class="rec-card"><span class="tag start">Nuova saga</span><h3>${escapeHtml(s.book.title)}</h3><div class="meta">${escapeHtml(s.author)} · <i>${escapeHtml(s.saga)}</i>${s.note?(' — '+escapeHtml(s.note)):''}</div><button class="btn-mark" data-open="${s.book.id}">Apri libro</button></div>`;
-  });
-  html += `</div></section>`;
+  const recAll = [];
+  continues.forEach(c=> recAll.push({ kind:'continue', book:c.book, author:c.author, saga:c.saga, readCount:c.readCount, total:c.total }));
+  starts.forEach(st=> recAll.push({ kind:'start', book:st.book, author:st.author, saga:st.saga, total:st.total, note:st.note }));
+  const dismissed = getDismissedRecs();
+  const recGenres = [...new Set(recAll.map(r=>r.book.genre))];
+  if(recGenre!=='all' && !recGenres.includes(recGenre)) recGenre = 'all';
+  const visibleRecs = recAll.filter(r=> !dismissed.has(r.book.id) && (recGenre==='all' || r.book.genre===recGenre)).slice(0,14);
+  const hiddenCount = recAll.filter(r=> dismissed.has(r.book.id)).length;
+
+  html += `<section class="block"><div class="block-head"><h2>Cosa leggere dopo</h2><span class="sub">${hiddenCount?`<span id="recReset" style="cursor:pointer;text-decoration:underline;">rimostra i ${hiddenCount} nascosti</span>`:'consigliato per te'}</span></div>`;
+  if(recGenres.length>1){
+    html += `<div class="plan-chips" style="margin-top:0;"><button class="chip${recGenre==='all'?' active':''}" data-recgenre="all">Tutti</button>${recGenres.map(g=>`<button class="chip${recGenre===g?' active':''}" data-recgenre="${escapeHtml(g)}">${escapeHtml(g)}</button>`).join('')}</div>`;
+  }
+  if(visibleRecs.length===0) html += `<div class="empty-note">${recAll.length?'Nessun consiglio con questo filtro.':'Nessun suggerimento — aggiungi qualche libro dalla libreria.'}</div>`;
+  else {
+    html += `<div class="rec-carousel">`;
+    visibleRecs.forEach(r=>{
+      const b = r.book, gs = genreStyle(b.genre);
+      const cached = b.coverUrl || customCoverCache[b.customCoverId];
+      const left = r.total - (r.readCount||0);
+      let reason;
+      if(r.kind==='continue') reason = left===1 ? 'Ti manca solo 1 libro per finire la saga!' : `Ti mancano ${left} libri per finire la saga.`;
+      else if(b.queuePlan && getPlan(b.queuePlan)) reason = `È nel tuo piano «${getPlan(b.queuePlan).name}».`;
+      else reason = r.total>1 ? `Nuova saga da ${r.total} libri.` : 'Un libro autoconclusivo da iniziare.';
+      const cov = cached ? `background-image:url('${cached}');` : `background:linear-gradient(180deg, ${gs.c2}, ${gs.c1});`;
+      html += `<div class="rec-slide">
+        <div class="rec-cover" data-reccover="${b.id}" data-open="${b.id}" style="${cov}"></div>
+        <span class="tag ${r.kind==='continue'?'continue':'start'}">${r.kind==='continue'?`Continua · ${r.readCount}/${r.total}`:'Nuova saga'}</span>
+        <h3>${escapeHtml(b.title)}</h3>
+        <div class="meta" style="margin-bottom:6px;">${escapeHtml(r.author)} · <i>${escapeHtml(r.saga)}</i></div>
+        <div class="rec-why">${escapeHtml(reason)}</div>
+        <div class="rec-actions"><button class="btn-mark" data-open="${b.id}">Apri libro</button><button class="rec-skip" data-recskip="${b.id}">Non ora</button></div>
+      </div>`;
+      if(!cached && b.customCoverId){
+        fetchCustomCover(b.customCoverId).then(data=>{ if(!data) return; const el = document.querySelector(`[data-reccover="${b.id}"]`); if(el){ el.style.background=''; el.style.backgroundImage=`url('${data}')`; } });
+      }
+    });
+    html += `</div>`;
+  }
+  html += `</section>`;
 
   html += `<section class="block"><div class="block-head"><h2>In arrivo a breve</h2><span class="sub">vedi tutte in "Prossime letture"</span></div>`;
   if(upcoming.length===0) html += `<div class="empty-note">Nessuna uscita programmata al momento.</div>`;
@@ -1170,6 +1213,9 @@ function renderPanoramica(){
   panel.innerHTML = html;
   wireCommon(panel);
   document.getElementById('btnDicePick').addEventListener('click', openDicePick);
+  panel.querySelectorAll('[data-recgenre]').forEach(el=> el.addEventListener('click', ()=>{ recGenre = el.dataset.recgenre; renderPanoramica(); }));
+  panel.querySelectorAll('[data-recskip]').forEach(el=> el.addEventListener('click', ()=>{ const d = getDismissedRecs(); d.add(el.dataset.recskip); setDismissedRecs(d); renderPanoramica(); }));
+  const rr = document.getElementById('recReset'); if(rr) rr.addEventListener('click', ()=>{ setDismissedRecs(new Set()); renderPanoramica(); });
   document.getElementById('goalEditLink').addEventListener('click', async ()=>{
     const val = prompt('Quanti libri vuoi leggere entro fine ' + thisYear + '?', yearlyGoal || '');
     if(val===null) return;
