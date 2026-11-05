@@ -385,7 +385,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-05.1';
+const APP_VERSION = '2026-11-05.2';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -1293,7 +1293,7 @@ function renderLetture(){
   });
   html += `<button class="chip" id="btnNewPlan">+ Nuovo piano</button></div>`;
   if(activePlan){
-    html += `<div class="plan-tools"><button class="btn-mark" id="btnRenamePlan" type="button">Rinomina</button>${plans.length>1?`<button class="btn-mark" id="btnDeletePlan" type="button" style="background:var(--rose-soft);color:var(--rose);">Elimina piano</button>`:''}</div>`;
+    html += `<div class="plan-tools"><button class="btn-mark" id="btnPlanLeft" type="button" title="Sposta il piano a sinistra" ${plans[0]&&plans[0].id===activePlanId?'disabled style="opacity:.35"':''}>◀</button><button class="btn-mark" id="btnPlanRight" type="button" title="Sposta il piano a destra" ${plans[plans.length-1]&&plans[plans.length-1].id===activePlanId?'disabled style="opacity:.35"':''}>▶</button><button class="btn-mark" id="btnRenamePlan" type="button">Rinomina</button>${plans.length>1?`<button class="btn-mark" id="btnDeletePlan" type="button" style="background:var(--rose-soft);color:var(--rose);">Elimina piano</button>`:''}</div>`;
   }
   if(queue.length===0){
     html += `<div class="empty-note">Questo piano è vuoto. Apri un libro qualsiasi e scegli "${activePlan?escapeHtml(activePlan.name):'un piano'}" nel campo "Piano di lettura".</div>`;
@@ -1353,6 +1353,14 @@ function renderLetture(){
     if(!name) return;
     activePlanId = (await createPlan(name)).id; renderLetture();
   });
+  const movePlan = async (dir)=>{
+    const i = plans.findIndex(p=>p.id===activePlanId), j = i+dir;
+    if(i<0 || j<0 || j>=plans.length) return;
+    [plans[i], plans[j]] = [plans[j], plans[i]];
+    await saveData(); renderLetture();
+  };
+  const bL = document.getElementById('btnPlanLeft'); if(bL) bL.addEventListener('click', ()=> movePlan(-1));
+  const bR = document.getElementById('btnPlanRight'); if(bR) bR.addEventListener('click', ()=> movePlan(1));
   const bRen = document.getElementById('btnRenamePlan');
   if(bRen) bRen.addEventListener('click', async ()=>{
     const name = (prompt('Nuovo nome del piano:', activePlan.name)||'').trim();
