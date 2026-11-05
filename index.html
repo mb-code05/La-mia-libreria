@@ -301,6 +301,15 @@ section.block{ margin-bottom: 34px; }
 .au-chip{ font-size:10.5px; font-weight:800; color:var(--emerald); background:var(--emerald-soft); padding:3px 8px; border-radius:5px; white-space:nowrap; }
 .au-del{ background:none; border:none; color:var(--lavender); cursor:pointer; font-size:13px; opacity:.6; }
 .au-del:hover{ opacity:1; color:var(--rose); }
+.mission-list{ display:flex; flex-direction:column; gap:8px; }
+.mission{ display:flex; align-items:center; gap:12px; background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding:12px 14px; }
+.mission.done{ border-color: var(--gold); }
+.mission-check{ flex:none; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; background: var(--bg-elevated); border:2px solid var(--hairline); }
+.mission.done .mission-check{ background: var(--gold); border-color: var(--gold); color: var(--bg); font-weight:800; }
+.mission-title{ font-family:'Cormorant Garamond',serif; font-weight:700; font-size:17px; color:var(--parchment); }
+.mission.done .mission-title{ text-decoration:line-through; opacity:.7; }
+.mission-count{ font-size:12px; color:var(--gold); font-family:'Karla',sans-serif; }
+.mission-desc{ font-size:12px; color:var(--lavender); }
 .challenge-list{ display:grid; grid-template-columns: repeat(auto-fill, minmax(260px,1fr)); gap:12px; }
 .challenge-item{ background: var(--bg-card); border:1px solid var(--hairline); border-radius: var(--radius); padding: 16px; }
 .challenge-item.gold{ border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
@@ -376,7 +385,7 @@ section.block{ margin-bottom: 34px; }
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modalInner"></div></div>
 <script>
 /* ================= GENRE CONFIG ================= */
-const APP_VERSION = '2026-11-03.18';
+const APP_VERSION = '2026-11-05.1';
 const GENRES = {
   'Fantasy':      { c1:'#7a2f42', c2:'#a8455a', dot:'#c9667c' },
   'Romantasy':    { c1:'#7e3a5e', c2:'#b25c8a', dot:'#d888ae' },
@@ -870,7 +879,7 @@ function challengeDeadline(c){
   if(d===0) return 'scade oggi';
   return `entro il ${fmtDate(c.end)} · ${d===1?'manca 1 giorno':`mancano ${d} giorni`}`;
 }
-const BADGE_ICONS = { plan:'📚', books:'📖', manual:'⭐' };
+const BADGE_ICONS = { plan:'📚', books:'📖', manual:'⭐', mission:'🎯', month:'🌟' };
 const BADGE_MESSAGES = [
   'Ce l\'hai fatta! Un\'altra pagina di storia tra i tuoi libri.',
   'Obiettivo raggiunto! Te lo sei guadagnato, un capitolo alla volta.',
@@ -899,7 +908,7 @@ function celebrateBadges(earned){
   const t = document.createElement('div');
   t.className = 'badge-toast';
   t.innerHTML = `<div class="bt-icon">🏆</div>
-    <div class="bt-body"><div class="bt-head">Challenge completata!</div>
+    <div class="bt-body"><div class="bt-head">${earned.every(e=>e.type==='mission'||e.type==='month')?'Missione compiuta!':'Challenge completata!'}</div>
     <div class="bt-title">${earned.map(e=>escapeHtml(e.title)).join(' · ')}</div>
     <div class="bt-msg">${msg}</div>
     <div class="bt-sub">Il badge è nella sezione "I tuoi badge" in <b>Il tuo anno</b>.</div></div>`;
@@ -1043,7 +1052,7 @@ function setSaveStatus(state){
   else if(state==='error'){ el.textContent = '⚠ Salvataggio non riuscito — riprova'; el.className='save-status error'; }
 }
 async function saveData(){
-  const earned = collectCompletedChallenges(); // finished challenges turn into badges before writing
+  const earned = collectCompletedChallenges().concat(collectMissionBadges(false)); // finished challenges / missions turn into badges before writing
   pendingWrites++;
   setSaveStatus('saving');
   try{
@@ -1553,6 +1562,11 @@ function openDetail(id){
     <h3>${escapeHtml(b.title)}</h3>
     <div class="modal-sub">${escapeHtml(b.author)} · ${escapeHtml(b.saga)}</div>
 
+    <div class="field"><label>Titolo</label><input type="text" id="fTitle" value="${escapeHtml(b.title)}"></div>
+    <div class="field"><label>Autore</label><input type="text" id="fAuthor" value="${escapeHtml(b.author)}"></div>
+    <div class="field"><label>Saga (lascia "Standalone" se è un libro singolo)</label><input type="text" id="fSaga" value="${escapeHtml(b.saga)}"></div>
+    <div class="field"><label>Numero nella saga</label><input type="number" id="fOrder" min="0" value="${b.order||''}" placeholder="es. 1"></div>
+    ${b.upcoming ? '' : '<div class="field"><label>Data di uscita (solo se non è ancora uscito)</label><input type="date" id="fRelease2"></div>'}
     <div class="field"><label>Copertina</label>
       <div class="cover-manual-row">
         <div class="cover-manual-preview" id="coverPreview">${(b.coverUrl||customCoverCache[b.customCoverId])?`<img src="${b.coverUrl||customCoverCache[b.customCoverId]}">`:'<span>nessuna</span>'}</div>
@@ -1724,6 +1738,15 @@ function openDetail(id){
     await saveData(); closeModal(); render();
   });
   document.getElementById('btnSaveDetail').addEventListener('click', async ()=>{
+    const newTitle = document.getElementById('fTitle').value.trim();
+    const newAuthor = document.getElementById('fAuthor').value.trim();
+    if(!newTitle || !newAuthor){ alert('Titolo e autore non possono essere vuoti.'); return; }
+    b.title = newTitle;
+    b.author = newAuthor;
+    b.saga = document.getElementById('fSaga').value.trim() || 'Standalone';
+    b.order = parseInt(document.getElementById('fOrder').value,10) || 0;
+    const rel2 = document.getElementById('fRelease2');
+    if(rel2 && rel2.value){ b.upcoming = true; b.releaseDate = rel2.value; }
     b.status = curStatus;
     b.genre = curGenre;
     b.coverChecked = true;
@@ -1753,8 +1776,9 @@ function openDetail(id){
       b.dateFinished = document.getElementById('fFinished').value || null;
       b.tags = curTags;
     }
-    if(b.upcoming){
-      b.releaseDate = document.getElementById('fRelease').value || null;
+    const relEl = document.getElementById('fRelease');
+    if(b.upcoming && relEl && !(rel2 && rel2.value)){
+      b.releaseDate = relEl.value || null;
     }
     await saveData(); closeModal(); render();
   });
@@ -1917,12 +1941,26 @@ function renderExtra(){
   }
   html += `</section>`;
 
-  html += `<section class="block"><div class="block-head"><h2>I tuoi badge</h2><span class="sub">${badges.length} ${badges.length===1?'conquistato':'conquistati'}</span></div>`;
-  if(badges.length===0){
+  const mKey = currentMonthKey();
+  const missions = getMonthMissions(mKey);
+  const mDone = missions.filter(m=>m.doneCount>=m.total).length;
+  html += `<section class="block"><div class="block-head"><h2>Missioni di ${MONTH_NAMES[parseInt(mKey.split('-')[1],10)-1].toLowerCase()}</h2><span class="sub">${mDone} / ${missions.length} completate</span></div>
+    <div class="goal-track" style="margin-bottom:12px;"><div class="goal-fill" style="width:${mDone/missions.length*100}%;"></div></div>
+    <div class="mission-list">`;
+  missions.forEach(m=>{
+    const ok = m.doneCount>=m.total;
+    html += `<div class="mission ${ok?'done':''}"><div class="mission-check">${ok?'✓':'🎯'}</div>
+      <div class="mission-body"><div class="mission-title">${escapeHtml(m.title)}${m.total>1?` <span class="mission-count">${m.doneCount}/${m.total}</span>`:''}</div>
+      <div class="mission-desc">${escapeHtml(m.desc)}</div></div></div>`;
+  });
+  html += `</div><div class="ch-deadline">Completa tutte le missioni per il badge "Mese perfetto". Contano i libri con la data di fine lettura in questo mese.</div></section>`;
+
+  html += `<section class="block"><div class="block-head"><h2>I tuoi badge</h2><span class="sub">${badges.filter(x=>!x.hidden).length} ${badges.filter(x=>!x.hidden).length===1?'conquistato':'conquistati'}</span></div>`;
+  if(badges.filter(x=>!x.hidden).length===0){
     html += `<div class="empty-note">Completa una challenge e il suo badge comparirà qui.</div>`;
   } else {
     html += `<div class="badge-grid">`;
-    badges.slice().reverse().forEach(bd=>{
+    badges.filter(x=>!x.hidden).reverse().forEach(bd=>{
       html += `<div class="badge-card"><button class="badge-del" data-bddel="${bd.id}" title="Elimina badge">✕</button><div class="badge-medal">${BADGE_ICONS[bd.type]||'🏅'}</div>
         <div class="badge-name">${escapeHtml(bd.title)}</div>
         <div class="badge-detail">${escapeHtml(bd.detail||'')}</div>
@@ -1973,7 +2011,8 @@ function renderExtra(){
   panel.querySelectorAll('[data-bddel]').forEach(el=> el.addEventListener('click', async ()=>{
     const bd = badges.find(x=>x.id===el.dataset.bddel);
     if(!bd || !confirm('Eliminare il badge "'+bd.title+'"?')) return;
-    badges = badges.filter(x=>x.id!==bd.id);
+    // mission badges stay as hidden markers so the same mission is not awarded again this month
+    if(bd.type==='mission' || bd.type==='month') bd.hidden = true; else badges = badges.filter(x=>x.id!==bd.id);
     await saveData(); renderExtra();
   }));
   const bn = document.getElementById('btnNewChallenge');
@@ -2096,6 +2135,58 @@ function openAuthorModal(cardId){
   document.getElementById('modalOverlay').classList.add('open');
 }
 function closeModalAndAutori(){ closeModal(); }
+
+/* ================= MONTHLY MISSIONS ================= */
+const MONTH_NAMES = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+function currentMonthKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function monthLabel(key){ const [y,m]=key.split('-'); return MONTH_NAMES[parseInt(m,10)-1]+' '+y; }
+function topReadGenre(){
+  const counts = {};
+  books.filter(b=>b.status==='read').forEach(b=> counts[b.genre]=(counts[b.genre]||0)+1);
+  const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+  return top ? top[0] : null;
+}
+/* each mission: key, title, desc, total, and progress(monthBooks, monthKey) → number done */
+const MISSION_VOLUME = { key:'volume', title:'Leggi 3 libri', desc:'Finisci almeno 3 libri questo mese.', total:3, done:(mb)=>mb.length };
+const MISSION_POOL = [
+  { key:'newauthor', title:'Un\'autrice nuova', desc:'Finisci un libro di un\'autrice o autore che non avevi mai letto.', total:1,
+    done:(mb,mk_)=> mb.some(b=> !books.some(o=> o.id!==b.id && o.status==='read' && normStr(o.author)===normStr(b.author) && (!o.dateFinished || o.dateFinished.slice(0,7) < mk_))) ? 1 : 0 },
+  { key:'fivestar', title:'Un libro da 5 stelle', desc:'Finisci un libro e dagli 5 stelle.', total:1,
+    done:(mb)=> mb.some(b=>b.rating>=5) ? 1 : 0 },
+  { key:'outside', title:'Fuori dalla tua comfort zone', desc:'Finisci un libro di un genere diverso dal tuo preferito.', total:1,
+    done:(mb)=>{ const g=topReadGenre(); return g && mb.some(b=>b.genre!==g) ? 1 : 0; } },
+  { key:'saga', title:'Chiudi una saga', desc:'Finisci l\'ultimo libro di una saga che avevi iniziato.', total:1,
+    done:(mb)=> mb.some(b=> b.saga && b.saga!=='Standalone' && books.filter(o=>o.author===b.author && o.saga===b.saga).every(o=>o.status==='read') && books.filter(o=>o.author===b.author && o.saga===b.saga).length>1) ? 1 : 0 },
+  { key:'plan', title:'Dal tuo piano', desc:'Finisci un libro che avevi messo in un piano di lettura.', total:1,
+    done:(mb)=> mb.some(b=>b.queuePlan) ? 1 : 0 },
+  { key:'flash', title:'Lettura lampo', desc:'Finisci un libro in 48 ore o meno.', total:1,
+    done:(mb)=> mb.some(b=> b.dateStarted && b.dateFinished && (new Date(b.dateFinished)-new Date(b.dateStarted))/3600000 <= 48) ? 1 : 0 },
+];
+function monthBooks(monthKey){
+  return books.filter(b=> b.status==='read' && b.dateFinished && String(b.dateFinished).slice(0,7)===monthKey);
+}
+/* this month's missions: the volume one + 3 picked from the pool (a different mix every month) */
+function getMonthMissions(monthKey){
+  const picks = MISSION_POOL.slice().sort((a,b)=> strHash(monthKey+a.key) - strHash(monthKey+b.key)).slice(0,3);
+  const mb = monthBooks(monthKey);
+  return [MISSION_VOLUME, ...picks].map(m=> ({ ...m, doneCount: Math.min(m.total, m.done(mb, monthKey)) }));
+}
+function collectMissionBadges(dryRun){
+  const key = currentMonthKey();
+  const missions = getMonthMissions(key);
+  const earned = [];
+  missions.forEach(m=>{
+    const id = `ms-${key}-${m.key}`;
+    if(m.doneCount>=m.total && !badges.some(b=>b.id===id))
+      earned.push({ id, title:m.title, type:'mission', detail:`Missione di ${monthLabel(key)}`, earnedAt: todayISO() });
+  });
+  const allId = `ms-${key}-all`;
+  const allDone = missions.every(m=>m.doneCount>=m.total);
+  if(allDone && !badges.some(b=>b.id===allId))
+    earned.push({ id:allId, title:`Mese perfetto: ${monthLabel(key)}`, type:'month', detail:'Tutte le missioni completate', earnedAt: todayISO() });
+  if(!dryRun && earned.length) badges = badges.concat(earned);
+  return earned;
+}
 
 /* ================= RENDER: CITAZIONI (collapsible, grouped by book) ================= */
 let openQuoteBooks = new Set();
@@ -2340,6 +2431,7 @@ async function boot(){
   await migrateCoverSizes();
   await migratePlans();
   await migrateReleased();
+  if(collectMissionBadges(true).length) await saveData();
   render();
   runCoverQueue();
   // Actively remove any previously-installed service worker and its caches —
